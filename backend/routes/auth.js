@@ -14,71 +14,63 @@ const loginLimiter = rateLimit({
   message: 'Too many login attempts, please try again after 15 minutes'
 });
 
+// -------- signup -------- //
 router.post('/register', async (req, res) => {
   try {
-    const { email, username, password } = req.body;
-    if (!email || !username || !password) {
-      return res.status(400).json({ error: 'Missing required fields' });
+    const { username, email, password, firebaseUid } = req.body;
+
+    if (!username || !email || !password || !firebaseUid) {
+      return res.status(400).json({ message: 'All fields are required' });
     }
 
-    const exists = await User.findOne({ $or: [{ email }, { username }] });
-    if (exists) {
-      return res.status(409).json({ error: 'Email or username already registered' });
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ message: 'Email already registered' });
     }
 
-    const passwordHash = await bcrypt.hash(password, 10);
-    const user = await User.create({ email, username, passwordHash });
+    const salt = await bcrypt.genSalt(10);
+    const passwordHash = await bcrypt.hash(password, salt);
 
-    const token = jwt.sign({ sub: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
-    logger.info(`New user registered: ${user.email}`);
-    res.json({ token, user: { id: user._id, email: user.email, username: user.username } });
-  } catch (e) {
-    logger.error(`Registration error for ${req.body.email}: ${e.message}`);
-    res.status(500).json({ error: e.message });
+    const newUser = new User({ username, email, passwordHash, firebaseUid });
+    await newUser.save();
+
+    res.status(201).json({
+      message: 'User registered',
+      userId: newUser._id,
+      infoCompleted: newUser.infoCompleted || false
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
   }
 });
 
-router.post('/login', loginLimiter, async (req, res) => {
+
+// Backend route
+router.put('/:firebaseUid/updateProfile', async (req, res) => {
   try {
-    const { email, password } = req.body;
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required' });
-    }
+    const { firebaseUid } = req.params; // this is the Firebase UID
+    const { phoneNumber, bio, address } = req.body;
 
-    const user = await User.findOne({ email });
-    if (!user) {
-      logger.warn(`Login failed: Unknown email ${email}`);
-      return res.status(401).json({ error: 'Invalid email or password' });
-    }
+    const updatedUser = await User.findOneAndUpdate(
+      { firebaseUid }, // search by firebaseUid, not _id
+      { phoneNumber, bio, address, infoCompleted: true },
+      { new: true }
+    );
 
-    if (user.isLocked()) {
-      logger.warn(`Login attempt on locked account: ${email}`);
-      return res.status(429).json({ error: 'Account is locked, try again later' });
-    }
+    if (!updatedUser)
+      return res.status(404).json({ message: 'User not found' });
 
-    const isMatch = await user.comparePassword(password);
-    if (!isMatch) {
-      await user.incrementLoginAttempts();
-      logger.warn(`Invalid password attempt for ${email}, attempt #${user.loginAttempts}`);
-      return res.status(401).json({ error: 'Invalid email or password' });
-    }
-
-    if (!user.isVerified) {
-      logger.warn(`Unverified login attempt for ${email}`);
-      return res.status(403).json({ error: 'Account not verified' });
-    }
-
-    user.loginAttempts = 0;
-    user.lastLoginDate = new Date();
-    await user.save();
-    logger.info(`Successful login for ${email}`);
-
-    const token = jwt.sign({ sub: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
-    res.json({ token, user: { id: user._id, email: user.email, username: user.username } });
-  } catch (e) {
-    logger.error(`Login error for ${req.body.email}: ${e.message}`);
-    res.status(500).json({ error: e.message });
+    res.status(200).json({ message: 'Profile updated successfully', user: updatedUser });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: 'Server error' });
   }
 });
+
+
+
+
+
 
 export default router;
