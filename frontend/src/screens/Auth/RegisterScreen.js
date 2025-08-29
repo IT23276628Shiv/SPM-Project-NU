@@ -76,40 +76,33 @@ export default function RegisterScreen({ navigation }) {
   if (!validateForm()) return;
 
   try {
-    // 1️⃣ Firebase Registration
-    const userCredential = await createUserWithEmailAndPassword(authfirebase, email, password);
-    const firebaseUser = userCredential.user;
-    console.log("Firebase UID:", firebaseUser.uid);
-
-    // 2️⃣ Backend API to save in MongoDB
     const response = await fetch("http://192.168.1.230:5000/api/auth/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: name, email, password  ,firebaseUid:firebaseUser.uid})
+      body: JSON.stringify({ username: name, email, passwordHash:password }) // no firebaseUid here
     });
 
     const data = await response.json();
     console.log("Backend Response:", data);
 
     if (response.ok) {
-      if (!data.infoCompleted) {
-        navigation.replace("InfoForm", { userId: data.userId }); // go to InfoForm
-      } else {
-        navigation.replace("Home"); // go directly to Home
-      }
+      // Navigate to InfoFormScreen with MongoDB userId and previous email/password
+      navigation.replace("InfoForm", { 
+        userId: data.userId, 
+        email, 
+        password, 
+        name 
+      });
     } else {
       Alert.alert("Error", data.message);
     }
 
   } catch (error) {
     console.log(error);
-    if (error.code === "auth/email-already-in-use") {
-      Alert.alert("Email Already Registered", `"${email}" is already registered.`);
-    } else {
-      Alert.alert("Error", error.message);
-    }
+    Alert.alert("Error", "Something went wrong!");
   }
 };
+
 
 
 

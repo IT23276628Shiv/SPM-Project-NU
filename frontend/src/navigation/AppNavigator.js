@@ -28,10 +28,6 @@ function MainTabs() {
     >
       <Tabs.Screen name="Home" component={HomeScreen} />
       <Tabs.Screen name="Profile" component={ProfileScreen} />
-      <Tabs.Screen name="InfoForm" component={InfoFormScreen} />
-
-
-      
     </Tabs.Navigator>
   );
 }
@@ -66,10 +62,15 @@ export default function AppNavigator() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       {!user ? (
+        // If not logged in, show auth stack
         <Stack.Screen name="Auth" component={AuthStack} />
       ) : (
+        // If logged in, show main tabs
         <Stack.Screen name="MainTabs" component={MainTabs} />
       )}
+
+      {/* InfoFormScreen accessible after registration */}
+      <Stack.Screen name="InfoForm" component={InfoFormScreen} />
     </Stack.Navigator>
   );
 }

@@ -14,60 +14,63 @@ const loginLimiter = rateLimit({
   message: 'Too many login attempts, please try again after 15 minutes'
 });
 
-// -------- signup -------- //
+
+
 router.post('/register', async (req, res) => {
   try {
-    const { username, email, password, firebaseUid } = req.body;
-
-    if (!username || !email || !password || !firebaseUid) {
-      return res.status(400).json({ message: 'All fields are required' });
-    }
-
+    const { username, email, passwordHash } = req.body;
+     
+    console.log("Hi am in register" ,passwordHash );
+    // Check if email exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.status(400).json({ message: 'Email already registered' });
     }
 
+    // Hash password
     const salt = await bcrypt.genSalt(10);
-    const passwordHash = await bcrypt.hash(password, salt);
+    const hashedPassword = await bcrypt.hash(passwordHash, salt);
 
-    const newUser = new User({ username, email, passwordHash, firebaseUid });
-    await newUser.save();
+    const newUser = new User({
+      username,
+      email,
+      passwordHash: hashedPassword
+    });
 
-    res.status(201).json({
-      message: 'User registered',
-      userId: newUser._id,
-      infoCompleted: newUser.infoCompleted || false
+    const savedUser = await newUser.save();
+
+    res.status(201).json({ 
+      message: "User registered in MongoDB",
+      userId: savedUser._id
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error' });
+    console.log(error);
+    res.status(500).json({ message: "Server error" });
   }
 });
 
-
-// Backend route
-router.put('/:firebaseUid/updateProfile', async (req, res) => {
+// 2️⃣ Update Profile & Add Firebase UID
+router.put('/:userId/updateProfile', async (req, res) => {
   try {
-    const { firebaseUid } = req.params; // this is the Firebase UID
-    const { phoneNumber, bio, address } = req.body;
+    const { userId } = req.params;
+    const { phoneNumber, bio, address, firebaseUid } = req.body;
 
-    const updatedUser = await User.findOneAndUpdate(
-      { firebaseUid }, // search by firebaseUid, not _id
-      { phoneNumber, bio, address, infoCompleted: true },
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { phoneNumber, bio, address, firebaseUid },
       { new: true }
     );
 
-    if (!updatedUser)
-      return res.status(404).json({ message: 'User not found' });
+    if (!updatedUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
 
-    res.status(200).json({ message: 'Profile updated successfully', user: updatedUser });
+    res.status(200).json({ message: "Profile updated successfully", user: updatedUser });
   } catch (error) {
     console.log(error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: "Server error" });
   }
 });
-
 
 
 
