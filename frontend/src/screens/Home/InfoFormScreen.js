@@ -5,6 +5,8 @@ import {
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import authfirebase from '../../../services/firebaseAuth';
 
+const API_URL = process.env.EXPO_PUBLIC_API_URL;
+
 // List of Sri Lankan districts
 const districts = [
   "Ampara","Anuradhapura","Badulla","Batticaloa","Colombo","Galle","Gampaha",
@@ -41,7 +43,7 @@ export default function InfoFormScreen({ route, navigation }) {
 
       // Update MongoDB
       const response = await fetch(
-        `http://192.168.1.230:5000/api/auth/${userId}/updateProfile`,
+        `${API_URL}/api/auth/${userId}/updateProfile`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
