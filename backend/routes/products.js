@@ -1,29 +1,32 @@
+// routes/products.js
+import express from "express";
+import Product from "../models/Product.js";
+import { authMiddleware } from "../middleware/auth.js";
 
-import { Router } from 'express';
-import jwt from 'jsonwebtoken';
-import Product from '../models/Product.js';
+const router = express.Router();
 
-const router = Router();
-
-// Middleware to verify JWT token
-const authMiddleware = (req, res, next) => {
-  const token = req.headers.authorization?.split(' ')[1];
-  if (!token) return res.status(401).json({ error: 'No token provided' });
-
+// Create product (receive JSON with imagesUrls)
+router.post("/", authMiddleware, async (req, res) => {
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.userId = decoded.sub;
-    next();
-  } catch (e) {
-    res.status(401).json({ error: 'Invalid token' });
-  }
-};
+    const {
+      categoryId,
+      title,
+      description,
+      condition,
+      price,
+      isForSwap,
+      swapPreferences,
+      address,
+      imagesUrls,
+    } = req.body;
 
-// Create a product (protected)
-router.post('/', authMiddleware, async (req, res) => {
-  try {
-    const { title, categoryId, description, condition, price, isForSwap, swapPreferences, imagesUrls, address } = req.body;
-    if (!title || !categoryId || !condition) return res.status(400).json({ error: 'Missing required fields' });
+    if (!categoryId || !title || !condition) {
+      return res.status(400).json({ error: "Please fill all required fields" });
+    }
+
+    if (!imagesUrls || imagesUrls.length === 0) {
+      return res.status(400).json({ error: "Please add at least 1 image" });
+    }
 
     const product = await Product.create({
       ownerId: req.userId,
@@ -34,60 +37,14 @@ router.post('/', authMiddleware, async (req, res) => {
       price,
       isForSwap,
       swapPreferences,
-      imagesUrls,
       address,
+      imagesUrls,
     });
-    res.status(201).json({ product });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
 
-// Get all products
-router.get('/', async (req, res) => {
-  try {
-    const products = await Product.find().populate('ownerId', 'username').populate('categoryId', 'name');
-    res.json({ products });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// Get a single product
-router.get('/:id', async (req, res) => {
-  try {
-    const product = await Product.findById(req.params.id).populate('ownerId', 'username').populate('categoryId', 'name');
-    if (!product) return res.status(404).json({ error: 'Product not found' });
-    res.json({ product });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// Update a product (protected, owner only)
-router.put('/:id', authMiddleware, async (req, res) => {
-  try {
-    const { title, categoryId, description, condition, price, isForSwap, swapPreferences, imagesUrls, address, status } = req.body;
-    const product = await Product.findOneAndUpdate(
-      { _id: req.params.id, ownerId: req.userId },
-      { title, categoryId, description, condition, price, isForSwap, swapPreferences, imagesUrls, address, status },
-      { new: true, runValidators: true }
-    );
-    if (!product) return res.status(404).json({ error: 'Product not found or unauthorized' });
-    res.json({ product });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// Delete a product (protected, owner only)
-router.delete('/:id', authMiddleware, async (req, res) => {
-  try {
-    const product = await Product.findOneAndDelete({ _id: req.params.id, ownerId: req.userId });
-    if (!product) return res.status(404).json({ error: 'Product not found or unauthorized' });
-    res.json({ message: 'Product deleted' });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(201).json(product);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Product creation failed" });
   }
 });
 
