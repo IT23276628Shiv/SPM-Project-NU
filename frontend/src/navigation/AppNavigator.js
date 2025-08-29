@@ -12,6 +12,7 @@ import ForgotPasswordScreen from '../screens/Auth/ForgotpasswordScreen';
 import HomeScreen from '../screens/Home/HomeScreen';
 import ProfileScreen from '../screens/Profile/ProfileScreen';
 import InfoFormScreen from '../screens/Home/InfoFormScreen';
+import AddProductScreen from '../screens/Home/AddProductScreen';
 
 const Stack = createNativeStackNavigator();
 const Tabs = createBottomTabNavigator();
@@ -28,6 +29,7 @@ function MainTabs() {
     >
       <Tabs.Screen name="Home" component={HomeScreen} />
       <Tabs.Screen name="Profile" component={ProfileScreen} />
+      <Tabs.Screen name="AddProduct" component={AddProductScreen} />
     </Tabs.Navigator>
   );
 }
