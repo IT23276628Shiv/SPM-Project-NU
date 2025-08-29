@@ -28,9 +28,16 @@ app.use(morgan('dev'));
 // Health check route
 app.get('/', (_req, res) => res.json({ ok: true, service: 'olx-backend' }));
 
+
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/products', productRoutes);
+
+
+
+
+
 
 // 404 handler (catch-all for unmatched routes)
 app.use((req, res) => {

@@ -6,6 +6,7 @@ const userSchema = new mongoose.Schema(
     username: { type: String, required: true, unique: true },
     email: { type: String, required: true, unique: true, lowercase: true },
     passwordHash: { type: String, required: true },
+    firebaseUid: { type: String, unique: true },
     phoneNumber: { type: String },
     profilePictureUrl: { type: String },
     bio: { type: String },
@@ -15,6 +16,7 @@ const userSchema = new mongoose.Schema(
     isVerified: { type: Boolean, default: false },
     ratingAverage: { type: Number, default: 0 },
     favoriteProducts: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Product' }], // Updated to reference Product
+    infoCompleted: { type: Boolean, default: false },
   },
   { timestamps: true }
 );
