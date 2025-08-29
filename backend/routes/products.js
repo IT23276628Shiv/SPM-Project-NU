@@ -4,7 +4,16 @@ import Product from "../models/Product.js";
 import { authMiddleware } from "../middleware/auth.js";
 
 const router = express.Router();
-
+// Get all products
+router.get("/", async (req, res) => {
+  try {
+    const products = await Product.find({ status: "available" }).sort({ listedDate: -1 });
+    res.json(products);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch products" });
+  }
+});
 // Create product (receive JSON with imagesUrls)
 router.post("/", authMiddleware, async (req, res) => {
   try {

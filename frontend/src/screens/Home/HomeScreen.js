@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   Image,
   RefreshControl,
+  Alert,
 } from "react-native";
 import axios from "axios";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
@@ -23,6 +24,8 @@ export default function HomeScreen() {
   const [products, setProducts] = useState([]);
   const [search, setSearch] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState("");
+  const [cart, setCart] = useState([]); // Local cart state
 
   // Fetch categories
   const fetchCategories = async () => {
@@ -30,7 +33,7 @@ export default function HomeScreen() {
       const res = await axios.get(`${API_URL}/api/categories`);
       setCategories(res.data.categories);
     } catch (e) {
-      console.log("Error fetching categories:", e);
+      console.log("Error fetching categories:", e.response?.data || e.message);
     }
   };
 
@@ -40,7 +43,7 @@ export default function HomeScreen() {
       const res = await axios.get(`${API_URL}/api/products`);
       setProducts(res.data);
     } catch (e) {
-      console.log("Error fetching products:", e);
+      console.log("Error fetching products:", e.response?.data || e.message);
     }
   };
 
@@ -56,6 +59,31 @@ export default function HomeScreen() {
     setRefreshing(true);
     fetchProducts().finally(() => setRefreshing(false));
   }, []);
+
+  // Filter products by search and category
+  const filteredProducts = products.filter((p) => {
+    const matchesSearch = p.title.toLowerCase().includes(search.toLowerCase());
+    const matchesCategory = selectedCategory
+      ? p.categoryId === selectedCategory
+      : true;
+    return matchesSearch && matchesCategory;
+  });
+
+  // Format price with commas
+  const formatPrice = (price) => {
+    if (!price) return "N/A";
+    return price.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  };
+
+  // Handle Add to Cart
+  const handleAddToCart = (product) => {
+    if (cart.some((item) => item._id === product._id)) {
+      Alert.alert("Info", "Product already in cart");
+      return;
+    }
+    setCart((prev) => [...prev, product]);
+    Alert.alert("Success", `${product.title} added to cart`);
+  };
 
   return (
     <Layout>
@@ -90,9 +118,40 @@ export default function HomeScreen() {
           showsHorizontalScrollIndicator={false}
           style={{ marginBottom: 20 }}
         >
+          <TouchableOpacity
+            style={[
+              styles.categoryBtn,
+              selectedCategory === "" && styles.selectedCategory,
+            ]}
+            onPress={() => setSelectedCategory("")}
+          >
+            <Text
+              style={[
+                styles.categoryText,
+                selectedCategory === "" && styles.selectedCategoryText,
+              ]}
+            >
+              All
+            </Text>
+          </TouchableOpacity>
+
           {categories.map((cat) => (
-            <TouchableOpacity key={cat._id} style={styles.categoryBtn}>
-              <Text style={styles.categoryText}>{cat.name}</Text>
+            <TouchableOpacity
+              key={cat._id}
+              style={[
+                styles.categoryBtn,
+                selectedCategory === cat._id && styles.selectedCategory,
+              ]}
+              onPress={() => setSelectedCategory(cat._id)}
+            >
+              <Text
+                style={[
+                  styles.categoryText,
+                  selectedCategory === cat._id && styles.selectedCategoryText,
+                ]}
+              >
+                {cat.name}
+              </Text>
             </TouchableOpacity>
           ))}
         </ScrollView>
@@ -100,27 +159,41 @@ export default function HomeScreen() {
         {/* Products */}
         <Text style={styles.sectionTitle}>Products</Text>
         <View style={styles.itemsContainer}>
-          {products
-            .filter((p) =>
-              p.title.toLowerCase().includes(search.toLowerCase())
-            )
-            .map((item) => (
-              <TouchableOpacity key={item._id} style={styles.card}>
-                {item.imagesUrls?.[0] ? (
-                  <Image
-                    source={{ uri: item.imagesUrls[0] }}
-                    style={styles.cardImage}
-                  />
-                ) : null}
-                <View style={styles.cardInfo}>
-                  <Text style={styles.cardTitle}>{item.title}</Text>
-                  <Text style={styles.cardPrice}>${item.price}</Text>
-                  <Text style={styles.cardCondition}>
-                    Condition: {item.condition}
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            ))}
+          {filteredProducts.length === 0 && (
+            <Text style={{ textAlign: "center", color: "#777" }}>
+              No products found
+            </Text>
+          )}
+
+          {filteredProducts.map((item) => (
+            <View key={item._id} style={styles.card}>
+              {item.imagesUrls?.[0] ? (
+                <Image
+                  source={{ uri: item.imagesUrls[0] }}
+                  style={styles.cardImage}
+                />
+              ) : (
+                <View style={[styles.cardImage, { backgroundColor: "#ccc" }]} />
+              )}
+              <View style={styles.cardInfo}>
+                <Text style={styles.cardTitle}>{item.title}</Text>
+                <Text style={styles.cardPrice}>
+                  LKR. {formatPrice(item.price)}
+                </Text>
+                <Text style={styles.cardCondition}>
+                  Condition: {item.condition}
+                </Text>
+
+                {/* Add to Cart button */}
+                <TouchableOpacity
+                  style={styles.addToCartBtn}
+                  onPress={() => handleAddToCart(item)}
+                >
+                  <Text style={styles.addToCartText}>Add to Cart</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))}
         </View>
       </ScrollView>
     </Layout>
@@ -157,6 +230,8 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   categoryText: { color: "#fff", fontWeight: "600" },
+  selectedCategory: { backgroundColor: "#ff6f61" },
+  selectedCategoryText: { color: "#fff", fontWeight: "bold" },
   sectionTitle: {
     fontSize: 22,
     fontWeight: "bold",
@@ -185,4 +260,15 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 16, fontWeight: "600", marginBottom: 6, color: "#333" },
   cardPrice: { fontSize: 14, color: "#ff6f61", fontWeight: "bold" },
   cardCondition: { fontSize: 12, color: "#555", marginTop: 2 },
+  addToCartBtn: {
+    marginTop: 10,
+    backgroundColor: "#ff6f61",
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  addToCartText: {
+    color: "#fff",
+    fontWeight: "bold",
+  },
 });

@@ -18,14 +18,13 @@ export default function AddProductScreen({ navigation }) {
   const { user } = useAuth();
 
   // Predefined categories
-// Example category array from backend (replace with your API fetch)
-const predefinedCategories = [
-  { _id: "64ef7b2a8a1b2c3d4e5f6789", name: "Vehicles" },
-  { _id: "64ef7b2a8a1b2c3d4e5f6790", name: "Phone" },
-  { _id: "64ef7b2a8a1b2c3d4e5f6791", name: "Laptop" },
-  { _id: "64ef7b2a8a1b2c3d4e5f6792", name: "Apartment" },
-  { _id: "other", name: "Other" },
-];
+  const predefinedCategories = [
+    { _id: "64ef7b2a8a1b2c3d4e5f6789", name: "Vehicles" },
+    { _id: "64ef7b2a8a1b2c3d4e5f6790", name: "Phone" },
+    { _id: "64ef7b2a8a1b2c3d4e5f6791", name: "Laptop" },
+    { _id: "64ef7b2a8a1b2c3d4e5f6792", name: "Apartment" },
+    { _id: "other", name: "Other" },
+  ];
 
   const [categoryId, setCategoryId] = useState("");
   const [customCategory, setCustomCategory] = useState("");
@@ -38,7 +37,7 @@ const predefinedCategories = [
   const [address, setAddress] = useState("");
   const [images, setImages] = useState([]);
 
-  // Pick images (supports Android & iOS)
+  // Pick images from gallery
   const pickImages = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== "granted") {
@@ -49,12 +48,11 @@ const predefinedCategories = [
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsMultipleSelection: true, // iOS only, Android selects one
+        allowsMultipleSelection: true, // iOS only
         quality: 0.7,
       });
 
       if (!result.canceled) {
-        // Always map through result.assets to get URIs
         const uris = result.assets.map((a) => a.uri);
         setImages((prev) => [...prev, ...uris]);
       }
@@ -72,18 +70,18 @@ const predefinedCategories = [
       type: "image/jpeg",
       name: `photo_${Date.now()}.jpg`,
     });
-    data.append("upload_preset", "mobile_upload"); // set in Cloudinary
-    data.append("cloud_name", "dvia7pu9t");
+    data.append("upload_preset", "mobile_upload"); // your upload preset
 
     try {
       const res = await fetch(
-        "https://api.cloudinary.com/v1_1/dvia7pu9t/image/upload",
+        "https://api.cloudinary.com/v1_1/dvia7pu9t/image/upload", // your Cloud name
         {
           method: "POST",
           body: data,
         }
       );
       const json = await res.json();
+      if (!json.secure_url) throw new Error("Cloudinary upload failed");
       return json.secure_url;
     } catch (err) {
       console.error("Cloudinary upload error:", err);
@@ -92,59 +90,49 @@ const predefinedCategories = [
   };
 
   // Submit product
-const submitProduct = async () => {
-  if (
-    !title ||
-    !categoryId ||
-    (categoryId === "other" && !customCategory) ||
-    !condition ||
-    !address ||
-    images.length === 0
-  ) {
-    Alert.alert("Error", "Please fill all required fields and add at least 1 image");
-    return;
-  }
-
-  try {
-    // Upload images to Cloudinary
-    const uploadedUrls = [];
-    for (const uri of images) {
-      const data = new FormData();
-      data.append("file", {
-        uri,
-        type: "image/jpeg",
-        name: `photo_${Date.now()}.jpg`,
-      });
-      data.append("upload_preset", "mobile_upload"); // set in Cloudinary
-
-      const res = await fetch(
-        "https://api.cloudinary.com/v1_1/dvia7pu9t/image/upload",
-        { method: "POST", body: data }
+  const submitProduct = async () => {
+    if (
+      !title ||
+      !categoryId ||
+      (categoryId === "other" && !customCategory) ||
+      !condition ||
+      !address ||
+      images.length === 0
+    ) {
+      Alert.alert(
+        "Error",
+        "Please fill all required fields and add at least 1 image"
       );
-      const json = await res.json();
-      uploadedUrls.push(json.secure_url);
+      return;
     }
 
-    // Send to backend
-    const token = await user.getIdToken();
+    try {
+      // Upload all images
+      const uploadedUrls = [];
+      for (const uri of images) {
+        const url = await uploadImageToCloudinary(uri);
+        uploadedUrls.push(url);
+      }
 
-    await axios.post(
-      `${API_URL}/api/products`,
-      {
-        categoryId: categoryId === "other" ? customCategory : categoryId,
-        title,
-        description,
-        condition,
-        price,
-        isForSwap,
-        swapPreferences,
-        address,
-        imagesUrls: uploadedUrls,
-      },
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
+      const token = await user.getIdToken();
 
-    Alert.alert("Success", "Product added!");
+      await axios.post(
+        `${API_URL}/api/products`,
+        {
+          categoryId: categoryId === "other" ? customCategory : categoryId,
+          title,
+          description,
+          condition,
+          price,
+          isForSwap,
+          swapPreferences,
+          address,
+          imagesUrls: uploadedUrls,
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      Alert.alert("Success", "Product added!");
       setCategoryId("");
       setCustomCategory("");
       setTitle("");
@@ -155,12 +143,12 @@ const submitProduct = async () => {
       setAddress("");
       setImages([]);
     navigation.goBack();
-  } catch (err) {
-    console.error("Backend error:", err.response?.data || err.message);
-    Alert.alert("Error", "Failed to add product");
-  }
-};
-
+      navigation.goBack();
+    } catch (err) {
+      console.error("Backend error:", err.response?.data || err.message);
+      Alert.alert("Error", "Failed to add product");
+    }
+  };
 
   return (
     <ScrollView style={styles.container}>
@@ -215,10 +203,7 @@ const submitProduct = async () => {
       {["new", "like_new", "good", "fair", "poor"].map((c) => (
         <TouchableOpacity
           key={c}
-          style={[
-            styles.conditionBtn,
-            condition === c && styles.selectedCondition,
-          ]}
+          style={[styles.conditionBtn, condition === c && styles.selectedCondition]}
           onPress={() => setCondition(c)}
         >
           <Text
@@ -235,7 +220,7 @@ const submitProduct = async () => {
       <Text style={styles.label}>Price</Text>
       <TextInput
         style={styles.input}
-        placeholder="Price in $"
+        placeholder="Price in LKR."
         value={price}
         onChangeText={setPrice}
         keyboardType="numeric"
