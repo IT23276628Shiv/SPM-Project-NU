@@ -6,7 +6,7 @@ import morgan from 'morgan';
 import dotenv from 'dotenv';
 import authRoutes from './routes/auth.js';
 import productRoutes from './routes/products.js';
-
+import categoriesRouter from './routes/category.js';
 dotenv.config();
 
 const app = express();
@@ -33,7 +33,7 @@ app.get('/', (_req, res) => res.json({ ok: true, service: 'olx-backend' }));
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/products', productRoutes);
-
+app.use("/api/categories", categoriesRouter);
 
 
 
