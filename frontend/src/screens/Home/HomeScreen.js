@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useState, useCallback } from "react";
 import {
   View,
   ScrollView,
@@ -166,7 +166,13 @@ export default function HomeScreen() {
           )}
 
           {filteredProducts.map((item) => (
-            <View key={item._id} style={styles.card}>
+            <TouchableOpacity
+              key={item._id}
+              style={styles.card}
+              onPress={() =>
+                navigation.navigate("ProductDetails", { product: item })
+              }
+            >
               {item.imagesUrls?.[0] ? (
                 <Image
                   source={{ uri: item.imagesUrls[0] }}
@@ -192,7 +198,7 @@ export default function HomeScreen() {
                   <Text style={styles.addToCartText}>Add to Cart</Text>
                 </TouchableOpacity>
               </View>
-            </View>
+            </TouchableOpacity>
           ))}
         </View>
       </ScrollView>
