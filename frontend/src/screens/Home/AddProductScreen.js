@@ -17,7 +17,6 @@ import { useAuth } from "../../context/AuthContext";
 export default function AddProductScreen({ navigation }) {
   const { user } = useAuth();
 
-  // Predefined categories
   const predefinedCategories = [
     { _id: "64ef7b2a8a1b2c3d4e5f6789", name: "Vehicles" },
     { _id: "64ef7b2a8a1b2c3d4e5f6790", name: "Phone" },
@@ -32,8 +31,7 @@ export default function AddProductScreen({ navigation }) {
   const [description, setDescription] = useState("");
   const [condition, setCondition] = useState("good");
   const [price, setPrice] = useState("");
-  const [isForSwap, setIsForSwap] = useState(false);
-  const [swapPreferences, setSwapPreferences] = useState("");
+  const [isForSwap, setIsForSwap] = useState(false); // true = Yes, false = No
   const [address, setAddress] = useState("");
   const [images, setImages] = useState([]);
 
@@ -44,14 +42,12 @@ export default function AddProductScreen({ navigation }) {
       Alert.alert("Permission required", "Allow access to gallery!");
       return;
     }
-
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsMultipleSelection: true, // iOS only
+        allowsMultipleSelection: true,
         quality: 0.7,
       });
-
       if (!result.canceled) {
         const uris = result.assets.map((a) => a.uri);
         setImages((prev) => [...prev, ...uris]);
@@ -62,7 +58,6 @@ export default function AddProductScreen({ navigation }) {
     }
   };
 
-  // Upload single image to Cloudinary
   const uploadImageToCloudinary = async (uri) => {
     const data = new FormData();
     data.append("file", {
@@ -70,15 +65,12 @@ export default function AddProductScreen({ navigation }) {
       type: "image/jpeg",
       name: `photo_${Date.now()}.jpg`,
     });
-    data.append("upload_preset", "mobile_upload"); // your upload preset
+    data.append("upload_preset", "mobile_upload");
 
     try {
       const res = await fetch(
-        "https://api.cloudinary.com/v1_1/dvia7pu9t/image/upload", // your Cloud name
-        {
-          method: "POST",
-          body: data,
-        }
+        "https://api.cloudinary.com/v1_1/dvia7pu9t/image/upload",
+        { method: "POST", body: data }
       );
       const json = await res.json();
       if (!json.secure_url) throw new Error("Cloudinary upload failed");
@@ -89,7 +81,6 @@ export default function AddProductScreen({ navigation }) {
     }
   };
 
-  // Submit product
   const submitProduct = async () => {
     if (
       !title ||
@@ -107,7 +98,6 @@ export default function AddProductScreen({ navigation }) {
     }
 
     try {
-      // Upload all images
       const uploadedUrls = [];
       for (const uri of images) {
         const url = await uploadImageToCloudinary(uri);
@@ -125,15 +115,14 @@ export default function AddProductScreen({ navigation }) {
           condition,
           price,
           isForSwap,
-          swapPreferences,
           address,
           imagesUrls: uploadedUrls,
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      Alert.alert("Success", "Product added!");
-      setCategoryId("");
+      Alert.alert("Success", "Product added successfully!");
+       setCategoryId("");
       setCustomCategory("");
       setTitle("");
       setDescription("");
@@ -142,7 +131,7 @@ export default function AddProductScreen({ navigation }) {
       setIsForSwap(false);
       setAddress("");
       setImages([]);
-    navigation.goBack();
+    
       navigation.goBack();
     } catch (err) {
       console.error("Backend error:", err.response?.data || err.message);
@@ -152,7 +141,7 @@ export default function AddProductScreen({ navigation }) {
 
   return (
     <ScrollView style={styles.container}>
-      <Text style={styles.label}>Title*</Text>
+      <Text style={styles.label}>Title</Text>
       <TextInput
         style={styles.input}
         placeholder="Product title"
@@ -169,21 +158,15 @@ export default function AddProductScreen({ navigation }) {
         onChangeText={setDescription}
       />
 
-      <Text style={styles.label}>Category*</Text>
+      <Text style={styles.label}>Category</Text>
       {predefinedCategories.map((cat) => (
         <TouchableOpacity
           key={cat._id}
-          style={[
-            styles.categoryBtn,
-            categoryId === cat._id && styles.selectedCategory,
-          ]}
+          style={[styles.categoryBtn, categoryId === cat._id && styles.selectedCategory]}
           onPress={() => setCategoryId(cat._id)}
         >
           <Text
-            style={[
-              styles.categoryText,
-              categoryId === cat._id && styles.selectedCategoryText,
-            ]}
+            style={[styles.categoryText, categoryId === cat._id && styles.selectedCategoryText]}
           >
             {cat.name}
           </Text>
@@ -199,7 +182,7 @@ export default function AddProductScreen({ navigation }) {
         />
       )}
 
-      <Text style={styles.label}>Condition*</Text>
+      <Text style={styles.label}>Condition</Text>
       {["new", "like_new", "good", "fair", "poor"].map((c) => (
         <TouchableOpacity
           key={c}
@@ -207,10 +190,7 @@ export default function AddProductScreen({ navigation }) {
           onPress={() => setCondition(c)}
         >
           <Text
-            style={[
-              styles.conditionText,
-              condition === c && styles.selectedConditionText,
-            ]}
+            style={[styles.conditionText, condition === c && styles.selectedConditionText]}
           >
             {c}
           </Text>
@@ -220,13 +200,13 @@ export default function AddProductScreen({ navigation }) {
       <Text style={styles.label}>Price</Text>
       <TextInput
         style={styles.input}
-        placeholder="Price in LKR."
+        placeholder="Price in LKR"
         value={price}
         onChangeText={setPrice}
         keyboardType="numeric"
       />
 
-      <Text style={styles.label}>Address*</Text>
+      <Text style={styles.label}>Address</Text>
       <TextInput
         style={styles.input}
         placeholder="Your address"
@@ -234,31 +214,79 @@ export default function AddProductScreen({ navigation }) {
         onChangeText={setAddress}
       />
 
-      <Text style={styles.label}>Swap Preferences</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="Optional"
-        value={swapPreferences}
-        onChangeText={setSwapPreferences}
-      />
+      {/* Swap Preference */}
+      <Text style={styles.label}>Swap Preference</Text>
+      <View style={{ flexDirection: "row", marginBottom: 10 }}>
+        <TouchableOpacity
+          style={[styles.swapBtn, isForSwap && styles.selectedSwap]}
+          onPress={() => setIsForSwap(true)}
+        >
+          <Text style={[styles.swapText, isForSwap && styles.selectedSwapText]}>Yes</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.swapBtn, !isForSwap && styles.selectedSwap]}
+          onPress={() => setIsForSwap(false)}
+        >
+          <Text style={[styles.swapText, !isForSwap && styles.selectedSwapText]}>No</Text>
+        </TouchableOpacity>
+      </View>
 
       <TouchableOpacity style={styles.imageBtn} onPress={pickImages}>
         <Text style={styles.imageBtnText}>Pick Images</Text>
       </TouchableOpacity>
 
       <ScrollView horizontal>
-        {images.map((uri, idx) => (
-          <Image
-            key={idx}
-            source={{ uri }}
-            style={{ width: 100, height: 100, marginRight: 10 }}
-          />
-        ))}
-      </ScrollView>
+  {images.map((uri, idx) => (
+    <View key={idx} style={{ position: "relative", marginRight: 10 }}>
+      <Image
+        source={{ uri }}
+        style={{ width: 100, height: 100, borderRadius: 8 }}
+      />
+      {/* ✕ Button */}
+      <TouchableOpacity
+        style={{
+          position: "absolute",
+          top: -8,
+          right: -8,
+          backgroundColor: "red",
+          borderRadius: 12,
+          width: 24,
+          height: 24,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+        onPress={() => {
+          setImages((prev) => prev.filter((_, i) => i !== idx));
+        }}
+      >
+        <Text style={{ color: "white", fontWeight: "bold" }}>✕</Text>
+      </TouchableOpacity>
+    </View>
+  ))}
+</ScrollView>
+
 
       <TouchableOpacity style={styles.submitBtn} onPress={submitProduct}>
         <Text style={styles.submitText}>Submit Product</Text>
       </TouchableOpacity>
+
+      <TouchableOpacity
+  style={[styles.submitBtn, { backgroundColor: "gray" }]}
+  onPress={() => {
+    setCategoryId("");
+    setCustomCategory("");
+    setTitle("");
+    setDescription("");
+    setCondition("good");
+    setPrice("");
+    setIsForSwap(false);
+    setAddress("");
+    setImages([]);
+  }}
+>
+  <Text style={styles.submitText}>Clear All</Text>
+</TouchableOpacity>
+
     </ScrollView>
   );
 }
@@ -292,6 +320,17 @@ const styles = StyleSheet.create({
   selectedCondition: { backgroundColor: "#ff6f61" },
   conditionText: { color: "#000" },
   selectedConditionText: { color: "#fff", fontWeight: "bold" },
+  swapBtn: {
+    flex: 1,
+    padding: 10,
+    backgroundColor: "#eee",
+    borderRadius: 8,
+    marginRight: 5,
+    alignItems: "center",
+  },
+  selectedSwap: { backgroundColor: "#2f95dc" },
+  swapText: { color: "#000", fontWeight: "bold" },
+  selectedSwapText: { color: "#fff" },
   imageBtn: {
     backgroundColor: "#2f95dc",
     padding: 12,

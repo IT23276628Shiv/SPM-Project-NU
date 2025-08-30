@@ -13,10 +13,12 @@ import HomeScreen from '../screens/Home/HomeScreen';
 import ProfileScreen from '../screens/Profile/ProfileScreen';
 import InfoFormScreen from '../screens/Home/InfoFormScreen';
 import AddProductScreen from '../screens/Home/AddProductScreen';
+import ProductDetailsScreen from "../screens/Home/ProductDetailsScreen";
 
 const Stack = createNativeStackNavigator();
 const Tabs = createBottomTabNavigator();
 
+// Bottom Tabs for logged-in users
 // Bottom Tabs for logged-in users
 function MainTabs() {
   return (
@@ -33,6 +35,28 @@ function MainTabs() {
     </Tabs.Navigator>
   );
 }
+
+// Main App Navigator
+export default function AppNavigator() {
+  const { user, loading } = useAuth();
+
+  if (loading) return <LoadingScreen />;
+
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      {!user ? (
+        <Stack.Screen name="Auth" component={AuthStack} />
+      ) : (
+        <Stack.Screen name="MainTabs" component={MainTabs} />
+      )}
+
+      {/* Extra screens accessible from navigation */}
+      <Stack.Screen name="InfoForm" component={InfoFormScreen} />
+      <Stack.Screen name="ProductDetails" component={ProductDetailsScreen} />
+    </Stack.Navigator>
+  );
+}
+
 
 // Auth Stack for logged-out users
 function AuthStack() {
@@ -55,27 +79,7 @@ function LoadingScreen() {
   );
 }
 
-// Main App Navigator
-export default function AppNavigator() {
-  const { user, loading } = useAuth();
 
-  if (loading) return <LoadingScreen />;
-
-  return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
-      {!user ? (
-        // If not logged in, show auth stack
-        <Stack.Screen name="Auth" component={AuthStack} />
-      ) : (
-        // If logged in, show main tabs
-        <Stack.Screen name="MainTabs" component={MainTabs} />
-      )}
-
-      {/* InfoFormScreen accessible after registration */}
-      <Stack.Screen name="InfoForm" component={InfoFormScreen} />
-    </Stack.Navigator>
-  );
-}
 
 const styles = StyleSheet.create({
   loadingContainer: {
