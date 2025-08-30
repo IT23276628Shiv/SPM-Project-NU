@@ -25,29 +25,34 @@ export default function HomeScreen() {
   const [search, setSearch] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState("");
-  const [cart, setCart] = useState([]); // Local cart state
+  const [cart, setCart] = useState([]);
 
   // Fetch categories
   const fetchCategories = async () => {
     try {
       const res = await axios.get(`${API_URL}/api/categories`);
-      setCategories(res.data.categories);
+      setCategories(res.data || []);
     } catch (e) {
       console.log("Error fetching categories:", e.response?.data || e.message);
+      setCategories([]);
     }
   };
 
-  // Fetch products
-  const fetchProducts = async () => {
+  // Fetch products (backend filtering by category)
+  const fetchProducts = async (categoryId = "") => {
     try {
-      const res = await axios.get(`${API_URL}/api/products`);
-      setProducts(res.data);
+      const url = categoryId
+        ? `${API_URL}/api/products?categoryId=${categoryId}`
+        : `${API_URL}/api/products`;
+      const res = await axios.get(url);
+      setProducts(res.data || []);
     } catch (e) {
       console.log("Error fetching products:", e.response?.data || e.message);
+      setProducts([]);
     }
   };
 
-  // Refresh products when screen is focused
+  // Refresh when screen is focused
   useFocusEffect(
     useCallback(() => {
       fetchCategories();
@@ -57,17 +62,13 @@ export default function HomeScreen() {
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    fetchProducts().finally(() => setRefreshing(false));
-  }, []);
+    fetchProducts(selectedCategory).finally(() => setRefreshing(false));
+  }, [selectedCategory]);
 
-  // Filter products by search and category
-  const filteredProducts = products.filter((p) => {
-    const matchesSearch = p.title.toLowerCase().includes(search.toLowerCase());
-    const matchesCategory = selectedCategory
-      ? p.categoryId === selectedCategory
-      : true;
-    return matchesSearch && matchesCategory;
-  });
+  // Filter products by search only (category already handled by backend)
+  const filteredProducts = products.filter((p) =>
+    p.title?.toLowerCase().includes(search.toLowerCase())
+  );
 
   // Format price with commas
   const formatPrice = (price) => {
@@ -75,7 +76,7 @@ export default function HomeScreen() {
     return price.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   };
 
-  // Handle Add to Cart
+  // Add to cart
   const handleAddToCart = (product) => {
     if (cart.some((item) => item._id === product._id)) {
       Alert.alert("Info", "Product already in cart");
@@ -98,7 +99,7 @@ export default function HomeScreen() {
         />
       </View>
 
-      {/* Add Product Button */}
+      {/* Add Product */}
       <TouchableOpacity
         style={styles.addProductBtn}
         onPress={() => navigation.navigate("AddProduct")}
@@ -123,7 +124,10 @@ export default function HomeScreen() {
               styles.categoryBtn,
               selectedCategory === "" && styles.selectedCategory,
             ]}
-            onPress={() => setSelectedCategory("")}
+            onPress={() => {
+              setSelectedCategory("");
+              fetchProducts(); // Fetch all products
+            }}
           >
             <Text
               style={[
@@ -135,14 +139,17 @@ export default function HomeScreen() {
             </Text>
           </TouchableOpacity>
 
-          {categories.map((cat) => (
+          {categories?.map((cat) => (
             <TouchableOpacity
               key={cat._id}
               style={[
                 styles.categoryBtn,
                 selectedCategory === cat._id && styles.selectedCategory,
               ]}
-              onPress={() => setSelectedCategory(cat._id)}
+              onPress={() => {
+                setSelectedCategory(cat._id);
+                fetchProducts(cat._id); // Fetch products by category
+              }}
             >
               <Text
                 style={[
@@ -160,12 +167,12 @@ export default function HomeScreen() {
         <Text style={styles.sectionTitle}>Products</Text>
         <View style={styles.itemsContainer}>
           {filteredProducts.length === 0 && (
-            <Text style={{ textAlign: "center", color: "#777" }}>
+            <Text style={{ textAlign: "center", color: "#777", width: "100%" }}>
               No products found
             </Text>
           )}
 
-          {filteredProducts.map((item) => (
+          {filteredProducts?.map((item) => (
             <TouchableOpacity
               key={item._id}
               style={styles.card}
@@ -174,23 +181,16 @@ export default function HomeScreen() {
               }
             >
               {item.imagesUrls?.[0] ? (
-                <Image
-                  source={{ uri: item.imagesUrls[0] }}
-                  style={styles.cardImage}
-                />
+                <Image source={{ uri: item.imagesUrls[0] }} style={styles.cardImage} />
               ) : (
                 <View style={[styles.cardImage, { backgroundColor: "#ccc" }]} />
               )}
               <View style={styles.cardInfo}>
                 <Text style={styles.cardTitle}>{item.title}</Text>
-                <Text style={styles.cardPrice}>
-                  LKR. {formatPrice(item.price)}
-                </Text>
-                <Text style={styles.cardCondition}>
-                  Condition: {item.condition}
-                </Text>
+                <Text style={styles.cardPrice}>LKR. {formatPrice(item.price)}</Text>
+                <Text style={styles.cardCondition}>Condition: {item.condition}</Text>
 
-                {/* Add to Cart button */}
+                {/* Add to Cart */}
                 <TouchableOpacity
                   style={styles.addToCartBtn}
                   onPress={() => handleAddToCart(item)}
@@ -238,17 +238,8 @@ const styles = StyleSheet.create({
   categoryText: { color: "#fff", fontWeight: "600" },
   selectedCategory: { backgroundColor: "#ff6f61" },
   selectedCategoryText: { color: "#fff", fontWeight: "bold" },
-  sectionTitle: {
-    fontSize: 22,
-    fontWeight: "bold",
-    marginBottom: 15,
-    color: "#ff6f61",
-  },
-  itemsContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-  },
+  sectionTitle: { fontSize: 22, fontWeight: "bold", marginBottom: 15, color: "#ff6f61" },
+  itemsContainer: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
   card: {
     width: "48%",
     backgroundColor: "#fff",
@@ -266,15 +257,6 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 16, fontWeight: "600", marginBottom: 6, color: "#333" },
   cardPrice: { fontSize: 14, color: "#ff6f61", fontWeight: "bold" },
   cardCondition: { fontSize: 12, color: "#555", marginTop: 2 },
-  addToCartBtn: {
-    marginTop: 10,
-    backgroundColor: "#ff6f61",
-    paddingVertical: 8,
-    borderRadius: 8,
-    alignItems: "center",
-  },
-  addToCartText: {
-    color: "#fff",
-    fontWeight: "bold",
-  },
+  addToCartBtn: { marginTop: 10, backgroundColor: "#ff6f61", paddingVertical: 8, borderRadius: 8, alignItems: "center" },
+  addToCartText: { color: "#fff", fontWeight: "bold" },
 });

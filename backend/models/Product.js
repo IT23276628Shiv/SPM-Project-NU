@@ -2,7 +2,8 @@ import mongoose from 'mongoose';
 
 const productSchema = new mongoose.Schema(
   {
-    ownerId: { type: String, required: true }, // store Firebase UID,
+    //ownerId: { type: String, required: true }, // store Firebase UID,
+    ownerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     categoryId: { type: mongoose.Schema.Types.ObjectId, ref: 'Category', required: true },
     title: { type: String, required: true },
     description: { type: String },

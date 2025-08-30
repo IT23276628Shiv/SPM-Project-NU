@@ -1,20 +1,41 @@
 // routes/products.js
 import express from "express";
+import mongoose from "mongoose";
 import Product from "../models/Product.js";
 import { authMiddleware } from "../middleware/auth.js";
 
 const router = express.Router();
-// Get all products
+
+// Get all products (with optional category filter)
 router.get("/", async (req, res) => {
   try {
-    const products = await Product.find({ status: "available" }).sort({ listedDate: -1 });
-    res.json(products);
+    const { categoryId } = req.query;
+
+    // Build filter object
+    let filter = { status: "available" };
+    if (categoryId) filter.categoryId = categoryId;
+
+    const products = await Product.find(filter)
+      .sort({ listedDate: -1 })
+      .populate("ownerId", "username phoneNumber")   // populate owner name
+      .populate("categoryId", "name"); 
+
+    const result = products.map((p) => ({
+      ...p.toObject(),
+      ownerName: p.ownerId?.username || "Unknown",
+      ownerContact: p.ownerId?.phoneNumber || "Unknown",
+      categoryName: p.categoryId?.name || "Unknown",
+
+    }));
+
+    res.json(result);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to fetch products" });
   }
 });
-// Create product (receive JSON with imagesUrls)
+
+// Create product
 router.post("/", authMiddleware, async (req, res) => {
   try {
     const {
@@ -24,19 +45,16 @@ router.post("/", authMiddleware, async (req, res) => {
       condition,
       price,
       isForSwap,
-      swapPreferences,
       address,
       imagesUrls,
     } = req.body;
 
-    if (!categoryId || !title || !condition) {
+    // Validate required fields
+    if (!categoryId || !title || !condition || !address || !imagesUrls?.length) {
       return res.status(400).json({ error: "Please fill all required fields" });
     }
 
-    if (!imagesUrls || imagesUrls.length === 0) {
-      return res.status(400).json({ error: "Please add at least 1 image" });
-    }
-
+    // Create product using firebaseUid as ownerId
     const product = await Product.create({
       ownerId: req.userId,
       categoryId,
@@ -45,15 +63,14 @@ router.post("/", authMiddleware, async (req, res) => {
       condition,
       price,
       isForSwap,
-      swapPreferences,
       address,
       imagesUrls,
     });
 
-    res.status(201).json(product);
+    res.status(201).json({ message: "Product added successfully", product });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Product creation failed" });
+    console.error("Failed to add product:", err);
+    res.status(500).json({ error: "Failed to add product" });
   }
 });
 
