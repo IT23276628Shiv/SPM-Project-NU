@@ -4,16 +4,31 @@ import mongoose from 'mongoose';
 import cors from 'cors';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
+import { Server } from "socket.io";
+import { createServer } from "http";
 import authRoutes from './routes/auth.js';
 import productRoutes from './routes/products.js';
+import messageRoutes, { initMessageSocket } from "./routes/messages.js";
+import userRoutes from './routes/auth.js';
 
 dotenv.config();
 
 const app = express();
+const httpServer = createServer(app); // HTTP + WebSocket
+
+// Socket.IO setup
+const io = new Server(httpServer, {
+  cors: {
+    origin: ["http://192.168.8.156:5000", "http://192.168.8.156:8083"], // frontend apps ,"172.16.21.30:3000","172.16.21.30:8082"
+    methods: ["GET", "POST"],
+    credentials: true,
+  },
+});
+initMessageSocket(io); // attach socket handlers
 
 // CORS configuration
 app.use(cors({
-  origin: ['http://localhost:5000', 'http://localhost:8081'],
+  origin: ['http://192.168.8.156:5000', ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   exposedHeaders: ['Content-Type', 'Authorization'],
@@ -33,8 +48,8 @@ app.get('/', (_req, res) => res.json({ ok: true, service: 'olx-backend' }));
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/products', productRoutes);
-
-
+app.use("/api/messages", messageRoutes);
+app.use('/api/users', userRoutes);
 
 
 
@@ -52,9 +67,10 @@ app.use((err, _req, res, _next) => {
 
 const { MONGO_URI = 'mongodb+srv://niranjansivarajah35:96q5uUO6ErnCXj1f@clustermobile.uuoyibh.mongodb.net/mobileSystem', PORT = 5000 } = process.env;
 
-mongoose.connect(MONGO_URI, { dbName: 'mobileSystem' })
+mongoose
+  .connect(MONGO_URI, { dbName: "mobileSystem" })
   .then(() => {
-    console.log('MongoDB connected');
-    app.listen(PORT, () => console.log(`API on http://localhost:${PORT}`));
+    console.log("✅ MongoDB connected");
+    httpServer.listen(PORT, () => console.log(`🚀 API + WS on 192.168.8.156:${PORT}`));
   })
-  .catch((err) => console.error('Mongo error:', err.message));
+  .catch((err) => console.error("❌ Mongo error:", err.message));
