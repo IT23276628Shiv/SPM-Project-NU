@@ -30,7 +30,9 @@ export default function HomeScreen() {
   // Fetch categories
   const fetchCategories = async () => {
     try {
+     // console.log("Fetching categories...");
       const res = await axios.get(`${API_URL}/api/categories`);
+     // console.log("Fetched categories:", res.data);
       setCategories(res.data || []);
     } catch (e) {
       console.log("Error fetching categories:", e.response?.data || e.message);
@@ -44,7 +46,10 @@ export default function HomeScreen() {
       const url = categoryId
         ? `${API_URL}/api/products?categoryId=${categoryId}`
         : `${API_URL}/api/products`;
+
+     // console.log("Fetching products from:", url);
       const res = await axios.get(url);
+      //console.log("Fetched products:", res.data);
       setProducts(res.data || []);
     } catch (e) {
       console.log("Error fetching products:", e.response?.data || e.message);
@@ -55,12 +60,14 @@ export default function HomeScreen() {
   // Refresh when screen is focused
   useFocusEffect(
     useCallback(() => {
+     // console.log("Screen focused → fetching categories & products");
       fetchCategories();
       fetchProducts();
     }, [])
   );
 
   const onRefresh = useCallback(() => {
+   // console.log("Refreshing products for category:", selectedCategory);
     setRefreshing(true);
     fetchProducts(selectedCategory).finally(() => setRefreshing(false));
   }, [selectedCategory]);
@@ -78,11 +85,20 @@ export default function HomeScreen() {
 
   // Add to cart
   const handleAddToCart = (product) => {
+   // console.log("Trying to add product to cart:", product);
+
     if (cart.some((item) => item._id === product._id)) {
+    //  console.log("Product already in cart:", product._id);
       Alert.alert("Info", "Product already in cart");
       return;
     }
-    setCart((prev) => [...prev, product]);
+
+    setCart((prev) => {
+      const updatedCart = [...prev, product];
+    //  console.log("Updated cart:", updatedCart);
+      return updatedCart;
+    });
+
     Alert.alert("Success", `${product.title} added to cart`);
   };
 
@@ -95,14 +111,20 @@ export default function HomeScreen() {
           style={styles.searchInput}
           placeholderTextColor="#999"
           value={search}
-          onChangeText={setSearch}
+          onChangeText={(text) => {
+          //  console.log("Search input:", text);
+            setSearch(text);
+          }}
         />
       </View>
 
       {/* Add Product */}
       <TouchableOpacity
         style={styles.addProductBtn}
-        onPress={() => navigation.navigate("AddProduct")}
+        onPress={() => {
+        //  console.log("Navigating to AddProduct screen");
+          navigation.navigate("AddProduct");
+        }}
       >
         <Text style={styles.addProductText}>+ Add Product</Text>
       </TouchableOpacity>
@@ -125,6 +147,7 @@ export default function HomeScreen() {
               selectedCategory === "" && styles.selectedCategory,
             ]}
             onPress={() => {
+            //  console.log("Selected category: All");
               setSelectedCategory("");
               fetchProducts(); // Fetch all products
             }}
@@ -147,6 +170,7 @@ export default function HomeScreen() {
                 selectedCategory === cat._id && styles.selectedCategory,
               ]}
               onPress={() => {
+              //  console.log("Selected category:", cat);
                 setSelectedCategory(cat._id);
                 fetchProducts(cat._id); // Fetch products by category
               }}
@@ -176,27 +200,43 @@ export default function HomeScreen() {
             <TouchableOpacity
               key={item._id}
               style={styles.card}
-              onPress={() =>
-                navigation.navigate("ProductDetails", { product: item })
-              }
+              onPress={() => {
+              //  console.log("Navigating to ProductDetails with:", item);
+                navigation.navigate("ProductDetails", { product: item });
+              }}
             >
               {item.imagesUrls?.[0] ? (
-                <Image source={{ uri: item.imagesUrls[0] }} style={styles.cardImage} />
+                <Image
+                  source={{ uri: item.imagesUrls[0] }}
+                  style={styles.cardImage}
+                />
               ) : (
                 <View style={[styles.cardImage, { backgroundColor: "#ccc" }]} />
               )}
               <View style={styles.cardInfo}>
                 <Text style={styles.cardTitle}>{item.title}</Text>
-                <Text style={styles.cardPrice}>LKR. {formatPrice(item.price)}</Text>
-                <Text style={styles.cardCondition}>Condition: {item.condition}</Text>
+                <Text style={styles.cardPrice}>
+                  LKR. {formatPrice(item.price)}
+                </Text>
+                <Text style={styles.cardCondition}>
+                  Condition: {item.condition}
+                </Text>
 
                 {/* Add to Cart */}
+                {/* Add to Cart OR Owner Label */}
+              {item.ownerId?.firebaseUid === user?.uid ? (
+                <View style={styles.ownerBadge}>
+                 <Text style={styles.ownerBadgeText}>Your Product</Text>
+                </View>
+                ) : (
                 <TouchableOpacity
                   style={styles.addToCartBtn}
                   onPress={() => handleAddToCart(item)}
                 >
                   <Text style={styles.addToCartText}>Add to Cart</Text>
                 </TouchableOpacity>
+              )}
+
               </View>
             </TouchableOpacity>
           ))}
@@ -238,8 +278,17 @@ const styles = StyleSheet.create({
   categoryText: { color: "#fff", fontWeight: "600" },
   selectedCategory: { backgroundColor: "#ff6f61" },
   selectedCategoryText: { color: "#fff", fontWeight: "bold" },
-  sectionTitle: { fontSize: 22, fontWeight: "bold", marginBottom: 15, color: "#ff6f61" },
-  itemsContainer: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
+  sectionTitle: {
+    fontSize: 22,
+    fontWeight: "bold",
+    marginBottom: 15,
+    color: "#ff6f61",
+  },
+  itemsContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+  },
   card: {
     width: "48%",
     backgroundColor: "#fff",
@@ -254,9 +303,31 @@ const styles = StyleSheet.create({
   },
   cardImage: { width: "100%", height: 140 },
   cardInfo: { padding: 10 },
-  cardTitle: { fontSize: 16, fontWeight: "600", marginBottom: 6, color: "#333" },
+  cardTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    marginBottom: 6,
+    color: "#333",
+  },
   cardPrice: { fontSize: 14, color: "#ff6f61", fontWeight: "bold" },
   cardCondition: { fontSize: 12, color: "#555", marginTop: 2 },
-  addToCartBtn: { marginTop: 10, backgroundColor: "#ff6f61", paddingVertical: 8, borderRadius: 8, alignItems: "center" },
+  addToCartBtn: {
+    marginTop: 10,
+    backgroundColor: "#ff6f61",
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignItems: "center",
+  },
   addToCartText: { color: "#fff", fontWeight: "bold" },
+
+  ownerBadge: {
+  marginTop: 10,
+  backgroundColor: "#2f95dc",
+  paddingVertical: 8,
+  borderRadius: 8,
+  alignItems: "center",
+},
+ownerBadgeText: { color: "#fff", fontWeight: "bold" },
+
 });
+
