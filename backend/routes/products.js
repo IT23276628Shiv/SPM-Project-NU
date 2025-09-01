@@ -17,7 +17,7 @@ router.get("/", async (req, res) => {
 
     const products = await Product.find(filter)
       .sort({ listedDate: -1 })
-      .populate("ownerId", "username phoneNumber")   // populate owner name
+      .populate("ownerId", "username phoneNumber firebaseUid")   // populate owner name
       .populate("categoryId", "name"); 
 
     const result = products.map((p) => ({

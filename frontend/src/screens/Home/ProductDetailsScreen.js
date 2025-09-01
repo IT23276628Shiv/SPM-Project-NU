@@ -1,5 +1,4 @@
 import React from "react";
-
 import {
   View,
   Text,
@@ -11,21 +10,22 @@ import {
 } from "react-native";
 import { useRoute } from "@react-navigation/native";
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
+import { useAuth } from "../../context/AuthContext"; // 
 
 const { width } = Dimensions.get("window");
 
 export default function ProductDetailsScreen() {
   const route = useRoute();
   const { product } = route.params || {};
+  const { user } = useAuth(); // 👈 logged-in user
 
-
-const formatPrice = (price) => {
-  if (!price) return "N/A";
-  return Number(price).toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-};
+  const formatPrice = (price) => {
+    if (!price) return "N/A";
+    return Number(price).toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  };
 
   if (!product) {
     return (
@@ -34,6 +34,9 @@ const formatPrice = (price) => {
       </View>
     );
   }
+
+  // 👇 check if this product belongs to logged-in user
+  const isOwner = product?.ownerId?.firebaseUid === user?.uid;
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
@@ -73,33 +76,35 @@ const formatPrice = (price) => {
         {product.address && <Text style={styles.field}>Location: {product.address}</Text>}
       </View>
 
-      {/* Buttons */}
-      <View style={styles.buttonsContainer}>
-        <TouchableOpacity style={styles.buyBtn}>
-          <Text style={styles.buyBtnText}>Buy</Text>
-        </TouchableOpacity>
+      {/* 👇 only show if NOT owner */}
+      {!isOwner && (
+        <>
+          {/* Buttons */}
+          <View style={styles.buttonsContainer}>
+            <TouchableOpacity style={styles.buyBtn}>
+              <Text style={styles.buyBtnText}>Buy</Text>
+            </TouchableOpacity>
 
-        {product.isForSwap && (
-          <TouchableOpacity style={styles.swapBtn}>
-            <Text style={styles.swapBtnText}>Swap</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-      
+            {product.isForSwap && (
+              <TouchableOpacity style={styles.swapBtn}>
+                <Text style={styles.swapBtnText}>Swap</Text>
+              </TouchableOpacity>
+            )}
+          </View>
 
-{/* WhatsApp & Chat Icons */}
-<View style={styles.iconsContainer}>
-  <TouchableOpacity style={styles.iconBtn}>
-    <MaterialCommunityIcons name="whatsapp" size={60} color="#25D366" marginLeft="100" />
-  </TouchableOpacity>
-  
-  <TouchableOpacity style={styles.iconBtn}>
-    <MaterialCommunityIcons name="chat" size={60} color="#4caf50" />
-  </TouchableOpacity>
-</View>
+          {/* WhatsApp & Chat Icons */}
+          <View style={styles.iconsContainer}>
+            <TouchableOpacity style={styles.iconBtn}>
+              <MaterialCommunityIcons name="whatsapp" size={60} color="#25D366" marginLeft="100"/>
+            </TouchableOpacity>
 
+            <TouchableOpacity style={styles.iconBtn}>
+              <MaterialCommunityIcons name="chat" size={60} color="#4caf50" />
+            </TouchableOpacity>
+          </View>
+        </>
+      )}
     </ScrollView>
-    
   );
 }
 
