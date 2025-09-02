@@ -14,6 +14,7 @@ import ProfileScreen from '../screens/Profile/ProfileScreen';
 import InfoFormScreen from '../screens/Home/InfoFormScreen';
 import AddProductScreen from '../screens/Home/AddProductScreen';
 import ProductDetailsScreen from "../screens/Home/ProductDetailsScreen";
+import CartScreen from "../screens/Home/CartScreen";
 
 const Stack = createNativeStackNavigator();
 const Tabs = createBottomTabNavigator();
@@ -53,6 +54,7 @@ export default function AppNavigator() {
       {/* Extra screens accessible from navigation */}
       <Stack.Screen name="InfoForm" component={InfoFormScreen} />
       <Stack.Screen name="ProductDetails" component={ProductDetailsScreen} />
+      <Stack.Screen name="Cart" component={CartScreen} /> 
     </Stack.Navigator>
   );
 }
