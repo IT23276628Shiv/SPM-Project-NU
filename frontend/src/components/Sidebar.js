@@ -97,10 +97,11 @@ export default function Sidebar({ sidebarAnim, onClose }) {
           <Text style={[styles.sidebarText, { color: "#2f95dc" }]}>My Orders</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.sidebarItem}>
-          <MaterialIcons name="favorite" size={22} color="#2f95dc" style={styles.icon} />
-          <Text style={[styles.sidebarText, { color: "#2f95dc" }]}>My Favorites</Text>
+        <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate("Cart")}>
+          <MaterialIcons name="shopping-cart" size={22} color="#2f95dc" style={styles.icon} />
+          <Text style={[styles.sidebarText, { color: "#2f95dc" }]}>My Cart</Text>
         </TouchableOpacity>
+
 
         <TouchableOpacity style={styles.sidebarItem}>
           <MaterialIcons name="add-box" size={22} color="#2f95dc" style={styles.icon} />

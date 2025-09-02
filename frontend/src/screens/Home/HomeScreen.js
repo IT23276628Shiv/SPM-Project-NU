@@ -15,6 +15,7 @@ import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useAuth } from "../../context/AuthContext";
 import { API_URL } from "../../constants/config";
 import Layout from "../../components/Layouts";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export default function HomeScreen() {
   const { user } = useAuth();
@@ -83,24 +84,27 @@ export default function HomeScreen() {
     return price.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   };
 
-  // Add to cart
-  const handleAddToCart = (product) => {
-   // console.log("Trying to add product to cart:", product);
 
-    if (cart.some((item) => item._id === product._id)) {
-    //  console.log("Product already in cart:", product._id);
+  // Add to cart
+const handleAddToCart = async (product) => {
+  try {
+    const key = `cart_${user._id}`;  // make it user-specific
+    const storedCart = await AsyncStorage.getItem(key);
+    const cartItems = storedCart ? JSON.parse(storedCart) : [];
+
+    if (cartItems.some((item) => item._id === product._id)) {
       Alert.alert("Info", "Product already in cart");
       return;
     }
 
-    setCart((prev) => {
-      const updatedCart = [...prev, product];
-    //  console.log("Updated cart:", updatedCart);
-      return updatedCart;
-    });
+    const updatedCart = [...cartItems, product];
+    await AsyncStorage.setItem(key, JSON.stringify(updatedCart));
 
     Alert.alert("Success", `${product.title} added to cart`);
-  };
+  } catch (err) {
+    console.log("Error saving cart:", err);
+  }
+};
 
   return (
     <Layout>
