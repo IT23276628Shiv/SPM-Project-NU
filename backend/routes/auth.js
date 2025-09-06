@@ -1,79 +1,177 @@
+// backend/routes/auth.js
 import { Router } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import rateLimit from 'express-rate-limit';
 import User from '../models/User.js';
-import pino from 'pino';
-const logger = pino(); // For logging
+import { authMiddleware } from '../middleware/auth.js';
 
 const router = Router();
 
-const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 5,
-  message: 'Too many login attempts, please try again after 15 minutes'
-});
-
-
-
+// Register user (first step - creates user in MongoDB)
 router.post('/register', async (req, res) => {
   try {
-    const { username, email, passwordHash } = req.body;
-     
-    console.log("Hi am in register" ,passwordHash );
-    // Check if email exists
-    const existingUser = await User.findOne({ email });
+    const { username, email, password } = req.body;
+
+    if (!username || !email || !password) {
+      return res.status(400).json({ error: 'All fields are required' });
+    }
+
+    // Check if user already exists
+    const existingUser = await User.findOne({ 
+      $or: [{ email }, { username }] 
+    });
+
     if (existingUser) {
-      return res.status(400).json({ message: 'Email already registered' });
+      return res.status(400).json({ error: 'User already exists' });
     }
 
     // Hash password
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(passwordHash, salt);
+    const passwordHash = await bcrypt.hash(password, 10);
 
-    const newUser = new User({
+    // Create user (without Firebase UID initially)
+    const user = await User.create({
       username,
       email,
-      passwordHash: hashedPassword
+      passwordHash,
+      infoCompleted: false
     });
-
-    const savedUser = await newUser.save();
 
     res.status(201).json({ 
-      message: "User registered in MongoDB",
-      userId: savedUser._id
+      message: 'User registered successfully',
+      userId: user._id,
+      email: user.email,
+      username: user.username
     });
   } catch (error) {
-    console.log(error);
-    res.status(500).json({ message: "Server error" });
+    console.error('Registration error:', error);
+    res.status(500).json({ error: 'Failed to register user' });
   }
 });
 
-// 2️⃣ Update Profile & Add Firebase UID
+// Update user profile (second step - adds Firebase UID and additional info)
 router.put('/:userId/updateProfile', async (req, res) => {
   try {
     const { userId } = req.params;
     const { phoneNumber, bio, address, firebaseUid } = req.body;
 
-    const updatedUser = await User.findByIdAndUpdate(
+    const user = await User.findByIdAndUpdate(
       userId,
-      { phoneNumber, bio, address, firebaseUid },
-      { new: true }
+      {
+        phoneNumber,
+        bio,
+        address,
+        firebaseUid,
+        infoCompleted: true,
+        lastLoginDate: new Date()
+      },
+      { new: true, runValidators: true }
     );
 
-    if (!updatedUser) {
-      return res.status(404).json({ message: "User not found" });
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
     }
 
-    res.status(200).json({ message: "Profile updated successfully", user: updatedUser });
+    res.json({
+      message: 'Profile updated successfully',
+      user: {
+        _id: user._id,
+        username: user.username,
+        email: user.email,
+        phoneNumber: user.phoneNumber,
+        bio: user.bio,
+        address: user.address,
+        profilePictureUrl: user.profilePictureUrl,
+        infoCompleted: user.infoCompleted
+      }
+    });
   } catch (error) {
-    console.log(error);
-    res.status(500).json({ message: "Server error" });
+    console.error('Profile update error:', error);
+    res.status(500).json({ error: 'Failed to update profile' });
   }
 });
 
+// Get user by Firebase UID
+router.get('/user/:firebaseUid', authMiddleware, async (req, res) => {
+  try {
+    const { firebaseUid } = req.params;
+    
+    const user = await User.findOne({ firebaseUid })
+      .select('-passwordHash')
+      .populate('favoriteProducts');
 
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
 
+    res.json({
+      user: {
+        _id: user._id,
+        username: user.username,
+        email: user.email,
+        phoneNumber: user.phoneNumber,
+        bio: user.bio,
+        address: user.address,
+        profilePictureUrl: user.profilePictureUrl,
+        ratingAverage: user.ratingAverage,
+        favoriteProducts: user.favoriteProducts,
+        infoCompleted: user.infoCompleted,
+        registrationDate: user.registrationDate,
+        lastLoginDate: user.lastLoginDate
+      }
+    });
+  } catch (error) {
+    console.error('Get user error:', error);
+    res.status(500).json({ error: 'Failed to get user' });
+  }
+});
 
+// Update user profile (for logged-in users)
+router.put('/profile', authMiddleware, async (req, res) => {
+  try {
+    const { username, phoneNumber, bio, address, profilePictureUrl } = req.body;
+
+    const user = await User.findByIdAndUpdate(
+      req.userId,
+      {
+        username,
+        phoneNumber,
+        bio,
+        address,
+        profilePictureUrl
+      },
+      { new: true, runValidators: true }
+    ).select('-passwordHash');
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json({
+      message: 'Profile updated successfully',
+      user
+    });
+  } catch (error) {
+    console.error('Profile update error:', error);
+    res.status(500).json({ error: 'Failed to update profile' });
+  }
+});
+
+// Get current user profile
+router.get('/profile', authMiddleware, async (req, res) => {
+  try {
+    const user = await User.findById(req.userId)
+      .select('-passwordHash')
+      .populate('favoriteProducts');
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json({ user });
+  } catch (error) {
+    console.error('Get profile error:', error);
+    res.status(500).json({ error: 'Failed to get profile' });
+  }
+});
 
 export default router;
