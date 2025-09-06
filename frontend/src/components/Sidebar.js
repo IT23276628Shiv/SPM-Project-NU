@@ -103,10 +103,11 @@ export default function Sidebar({ sidebarAnim, onClose }) {
         </TouchableOpacity>
 
 
-        <TouchableOpacity style={styles.sidebarItem}>
-          <MaterialIcons name="add-box" size={22} color="#2f95dc" style={styles.icon} />
-          <Text style={[styles.sidebarText, { color: "#2f95dc" }]}>Add Product</Text>
+        <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate("MyActivity")}>
+          <MaterialIcons name="history" size={22} color="#2f95dc" style={styles.icon} />
+          <Text style={[styles.sidebarText, { color: "#2f95dc" }]}>My Activity</Text>
         </TouchableOpacity>
+
 
         <TouchableOpacity style={styles.sidebarItem} onPress={() => alert("Settings")}>
           <MaterialIcons name="settings" size={22} color="#2f95dc" style={styles.icon} />
