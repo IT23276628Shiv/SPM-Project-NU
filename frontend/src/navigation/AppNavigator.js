@@ -18,6 +18,7 @@ import ProductDetailsScreen from "../screens/Home/ProductDetailsScreen";
 import CartScreen from "../screens/Home/CartScreen";
 import ChatListScreen from "../screens/Chat/ChatListScreen";
 import ChatScreen from "../screens/Chat/ChatScreen";
+import MyActivityScreen from "../screens/Home/MyActivityScreen";
 
 const Stack = createNativeStackNavigator();
 const Tabs = createBottomTabNavigator();
@@ -149,6 +150,15 @@ export default function AppNavigator() {
           headerTintColor: '#fff',
           headerTitleStyle: { fontWeight: 'bold' },
           // Title will be set dynamically in ChatScreen
+        }}
+      />
+      <Stack.Screen name="MyActivity" component={MyActivityScreen} />
+      <Stack.Screen name="AddProduct" component={AddProductScreen} />
+      <Stack.Screen 
+        name="Home" 
+        component={HomeScreen}
+        options={{
+          tabBarLabel: 'Home',
         }}
       />
     </Stack.Navigator>
