@@ -8,19 +8,29 @@ import {
   Image,
   StyleSheet,
   RefreshControl,
-  Alert
+  Alert,
+  TextInput,
+  Animated,
+  Dimensions
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { Swipeable } from 'react-native-gesture-handler';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useAuth } from '../../context/AuthContext';
 import { API_URL } from '../../constants/config';
 import Layout from '../../components/Layouts';
+
+const { width } = Dimensions.get('window');
 
 export default function ChatListScreen() {
   const { user } = useAuth();
   const navigation = useNavigation();
   const [conversations, setConversations] = useState([]);
+  const [filteredConversations, setFilteredConversations] = useState([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchVisible, setSearchVisible] = useState(false);
 
   const fetchConversations = async () => {
     try {
@@ -36,7 +46,22 @@ export default function ChatListScreen() {
       const data = await response.json();
       
       if (response.ok) {
-        setConversations(data.conversations || []);
+        // Group conversations by other user to prevent duplicates
+        const groupedConversations = {};
+        
+        data.conversations?.forEach(conv => {
+          const otherUserId = conv.otherUser._id;
+          
+          // If we already have a conversation with this user, keep the most recent one
+          if (!groupedConversations[otherUserId] || 
+              new Date(conv.updatedAt) > new Date(groupedConversations[otherUserId].updatedAt)) {
+            groupedConversations[otherUserId] = conv;
+          }
+        });
+
+        const uniqueConversations = Object.values(groupedConversations);
+        setConversations(uniqueConversations);
+        setFilteredConversations(uniqueConversations);
       } else {
         console.error('Error fetching conversations:', data.error);
       }
@@ -51,6 +76,20 @@ export default function ChatListScreen() {
     setRefreshing(true);
     fetchConversations().finally(() => setRefreshing(false));
   }, []);
+
+  const handleSearch = (query) => {
+    setSearchQuery(query);
+    if (query.trim() === '') {
+      setFilteredConversations(conversations);
+    } else {
+      const filtered = conversations.filter(conv =>
+        conv.otherUser.username.toLowerCase().includes(query.toLowerCase()) ||
+        (conv.product?.title || '').toLowerCase().includes(query.toLowerCase()) ||
+        (conv.lastMessage?.content || '').toLowerCase().includes(query.toLowerCase())
+      );
+      setFilteredConversations(filtered);
+    }
+  };
 
   useFocusEffect(
     React.useCallback(() => {
@@ -105,7 +144,9 @@ export default function ChatListScreen() {
       });
 
       if (response.ok) {
-        setConversations(prev => prev.filter(conv => conv._id !== conversationId));
+        const updatedConversations = conversations.filter(conv => conv._id !== conversationId);
+        setConversations(updatedConversations);
+        setFilteredConversations(updatedConversations);
       } else {
         const data = await response.json();
         Alert.alert('Error', data.error || 'Failed to delete conversation');
@@ -114,6 +155,20 @@ export default function ChatListScreen() {
       console.error('Error deleting conversation:', error);
       Alert.alert('Error', 'Failed to delete conversation');
     }
+  };
+
+  const renderRightActions = (conversationId) => {
+    return (
+      <View style={styles.rightActions}>
+        <TouchableOpacity
+          style={styles.deleteAction}
+          onPress={() => handleDeleteConversation(conversationId)}
+        >
+          <MaterialCommunityIcons name="delete" size={24} color="#fff" />
+          <Text style={styles.actionText}>Delete</Text>
+        </TouchableOpacity>
+      </View>
+    );
   };
 
   const renderConversationItem = ({ item }) => {
@@ -133,78 +188,79 @@ export default function ChatListScreen() {
     };
 
     return (
-      <TouchableOpacity
-        style={styles.conversationItem}
-        onPress={() => navigation.navigate('Chat', { 
-          conversation: item,
-          otherUser: item.otherUser 
-        })}
-        onLongPress={() => handleDeleteConversation(item._id)}
-      >
-        <View style={styles.conversationContent}>
-          {/* Profile Picture */}
-          <View style={styles.profileSection}>
-            {item.otherUser.profilePictureUrl ? (
-              <Image 
-                source={{ uri: item.otherUser.profilePictureUrl }} 
-                style={styles.profilePicture} 
-              />
-            ) : (
-              <View style={styles.defaultProfile}>
-                <Text style={styles.defaultProfileText}>
-                  {item.otherUser.username?.charAt(0).toUpperCase()}
-                </Text>
-              </View>
-            )}
-            
-            {item.unreadCount > 0 && (
-              <View style={styles.unreadBadge}>
-                <Text style={styles.unreadText}>
-                  {item.unreadCount > 99 ? '99+' : item.unreadCount}
-                </Text>
-              </View>
-            )}
-          </View>
-
-          {/* Chat Info */}
-          <View style={styles.chatInfo}>
-            <View style={styles.chatHeader}>
-              <Text style={styles.username}>{item.otherUser.username}</Text>
-              {item.lastMessage && (
-                <Text style={styles.timestamp}>
-                  {formatLastMessageTime(item.lastMessage.sentDate)}
-                </Text>
+      <Swipeable renderRightActions={() => renderRightActions(item._id)}>
+        <TouchableOpacity
+          style={styles.conversationItem}
+          onPress={() => navigation.navigate('Chat', { 
+            conversation: item,
+            otherUser: item.otherUser 
+          })}
+        >
+          <View style={styles.conversationContent}>
+            {/* Profile Picture */}
+            <View style={styles.profileSection}>
+              {item.otherUser.profilePictureUrl ? (
+                <Image 
+                  source={{ uri: item.otherUser.profilePictureUrl }} 
+                  style={styles.profilePicture} 
+                />
+              ) : (
+                <View style={styles.defaultProfile}>
+                  <Text style={styles.defaultProfileText}>
+                    {item.otherUser.username?.charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+              )}
+              
+              {item.unreadCount > 0 && (
+                <View style={styles.unreadBadge}>
+                  <Text style={styles.unreadText}>
+                    {item.unreadCount > 99 ? '99+' : item.unreadCount}
+                  </Text>
+                </View>
               )}
             </View>
 
-            {/* Product Info if available */}
-            {item.product && (
-              <Text style={styles.productInfo}>
-                About: {item.product.title}
+            {/* Chat Info */}
+            <View style={styles.chatInfo}>
+              <View style={styles.chatHeader}>
+                <Text style={styles.username}>{item.otherUser.username}</Text>
+                {item.lastMessage && (
+                  <Text style={styles.timestamp}>
+                    {formatLastMessageTime(item.lastMessage.sentDate)}
+                  </Text>
+                )}
+              </View>
+
+              {/* Product Info if available */}
+              {item.product && (
+                <Text style={styles.productInfo}>
+                  About: {item.product.title}
+                </Text>
+              )}
+
+              {/* Last Message */}
+              <Text 
+                style={[
+                  styles.lastMessage, 
+                  item.unreadCount > 0 && styles.unreadMessage
+                ]}
+                numberOfLines={1}
+              >
+                {lastMessagePreview()}
               </Text>
+            </View>
+
+            {/* Product Thumbnail */}
+            {item.product && item.product.imagesUrls?.[0] && (
+              <Image 
+                source={{ uri: item.product.imagesUrls[0] }} 
+                style={styles.productThumbnail} 
+              />
             )}
-
-            {/* Last Message */}
-            <Text 
-              style={[
-                styles.lastMessage, 
-                item.unreadCount > 0 && styles.unreadMessage
-              ]}
-              numberOfLines={1}
-            >
-              {lastMessagePreview()}
-            </Text>
           </View>
-
-          {/* Product Thumbnail */}
-          {item.product && item.product.imagesUrls?.[0] && (
-            <Image 
-              source={{ uri: item.product.imagesUrls[0] }} 
-              style={styles.productThumbnail} 
-            />
-          )}
-        </View>
-      </TouchableOpacity>
+        </TouchableOpacity>
+      </Swipeable>
     );
   };
 
@@ -221,24 +277,68 @@ export default function ChatListScreen() {
   return (
     <Layout>
       <View style={styles.container}>
-        <Text style={styles.title}>Messages</Text>
+        {/* Header with search */}
+        <View style={styles.header}>
+          <View style={styles.headerTop}>
+            <Text style={styles.title}>Messages</Text>
+            <TouchableOpacity
+              onPress={() => setSearchVisible(!searchVisible)}
+              style={styles.searchButton}
+            >
+              <MaterialCommunityIcons name="magnify" size={24} color="#2f95dc" />
+            </TouchableOpacity>
+          </View>
+          
+          {searchVisible && (
+            <View style={styles.searchContainer}>
+              <MaterialCommunityIcons name="magnify" size={20} color="#666" style={styles.searchIcon} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search conversations..."
+                value={searchQuery}
+                onChangeText={handleSearch}
+                autoFocus={searchVisible}
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity
+                  onPress={() => handleSearch('')}
+                  style={styles.clearButton}
+                >
+                  <MaterialCommunityIcons name="close" size={20} color="#666" />
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+        </View>
         
-        {conversations.length === 0 ? (
+        {filteredConversations.length === 0 ? (
           <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>No conversations yet</Text>
-            <Text style={styles.emptySubText}>
-              Start chatting with sellers from product details
-            </Text>
+            {searchQuery ? (
+              <>
+                <Text style={styles.emptyText}>No conversations found</Text>
+                <Text style={styles.emptySubText}>
+                  Try searching with different keywords
+                </Text>
+              </>
+            ) : (
+              <>
+                <Text style={styles.emptyText}>No conversations yet</Text>
+                <Text style={styles.emptySubText}>
+                  Start chatting with sellers from product details
+                </Text>
+              </>
+            )}
           </View>
         ) : (
           <FlatList
-            data={conversations}
+            data={filteredConversations}
             keyExtractor={(item) => item._id}
             renderItem={renderConversationItem}
             refreshControl={
               <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
             }
             showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.listContainer}
           />
         )}
       </View>
@@ -251,11 +351,51 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f8f9fa',
   },
+  header: {
+    backgroundColor: '#fff',
+    paddingTop: 16,
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
-    padding: 16,
     color: '#333',
+  },
+  searchButton: {
+    padding: 8,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8f9fa',
+    borderRadius: 25,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    marginBottom: 8,
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    color: '#333',
+  },
+  clearButton: {
+    marginLeft: 8,
+    padding: 4,
+  },
+  listContainer: {
+    paddingTop: 8,
   },
   conversationItem: {
     backgroundColor: '#fff',
@@ -350,6 +490,28 @@ const styles = StyleSheet.create({
     height: 40,
     borderRadius: 8,
     marginLeft: 8,
+  },
+  rightActions: {
+    width: 80,
+    backgroundColor: '#ff4757',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+    marginRight: 16,
+    borderTopRightRadius: 12,
+    borderBottomRightRadius: 12,
+  },
+  deleteAction: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    height: '100%',
+    width: '100%',
+  },
+  actionText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 4,
   },
   centerContainer: {
     flex: 1,
