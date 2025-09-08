@@ -1,17 +1,23 @@
-// backend/server.js
+// backend/server.js (Updated with Socket.IO)
 import express from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
+import { createServer } from 'http';
 import authRoutes from './routes/auth.js';
 import productRoutes from './routes/products.js';
 import categoriesRouter from './routes/category.js';
-import messageRoutes from './routes/message.js'; // Add message routes
+import messageRoutes from './routes/message.js';
+import { initializeSocket } from './socket/socketHandler.js';
 
 dotenv.config();
 
 const app = express();
+const server = createServer(app);
+
+// Initialize Socket.IO
+const io = initializeSocket(server);
 
 // CORS configuration
 app.use(cors({
@@ -24,9 +30,15 @@ app.use(cors({
 }));
 
 // Middleware
-app.use(express.json({ limit: '10mb' })); // Increased limit for image uploads
+app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 app.use(morgan('dev'));
+
+// Make io available to routes
+app.use((req, res, next) => {
+  req.io = io;
+  next();
+});
 
 // Health check route
 app.get('/', (_req, res) => res.json({ ok: true, service: 'olx-backend' }));
@@ -35,9 +47,9 @@ app.get('/', (_req, res) => res.json({ ok: true, service: 'olx-backend' }));
 app.use('/api/auth', authRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/categories', categoriesRouter);
-app.use('/api/messages', messageRoutes); // Add message routes
+app.use('/api/messages', messageRoutes);
 
-// 404 handler (catch-all for unmatched routes)
+// 404 handler
 app.use((req, res) => {
   res.status(404).json({ error: 'Not Found' });
 });
@@ -48,11 +60,17 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ message: 'Something went wrong!' });
 });
 
-const { MONGO_URI = 'mongodb+srv://niranjansivarajah35:96q5uUO6ErnCXj1f@clustermobile.uuoyibh.mongodb.net/mobileSystem', PORT = 5000 } = process.env;
+const { 
+  MONGO_URI = 'mongodb+srv://niranjansivarajah35:96q5uUO6ErnCXj1f@clustermobile.uuoyibh.mongodb.net/mobileSystem', 
+  PORT = 5000 
+} = process.env;
 
 mongoose.connect(MONGO_URI, { dbName: 'mobileSystem' })
   .then(() => {
     console.log('MongoDB connected');
-    app.listen(PORT, () => console.log(`API on http://localhost:${PORT}`));
+    server.listen(PORT, () => {
+      console.log(`API server running on http://localhost:${PORT}`);
+      console.log(`Socket.IO server running on http://localhost:${PORT}`);
+    });
   })
-  .catch((err) => console.error('Mongo error:', err.message));
+  .catch((err) => console.error('MongoDB connection error:', err.message));

@@ -3,7 +3,7 @@ import React, { createContext, useState, useContext, useEffect } from 'react';
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import authfirebase from '../../services/firebaseAuth';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.230:5000';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://172.16.20.210:5000';
 
 const AuthContext = createContext();
 
