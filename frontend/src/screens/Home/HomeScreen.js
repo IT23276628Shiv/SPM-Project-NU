@@ -1,3 +1,5 @@
+
+
 import React, { useState, useCallback } from "react";
 import {
   View,
@@ -16,6 +18,28 @@ import { useAuth } from "../../context/AuthContext";
 import { API_URL } from "../../constants/config";
 import Layout from "../../components/Layouts";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Dropdown } from "react-native-element-dropdown";
+import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
+
+// Location list
+const LOCATIONS = [
+  "All", "Ampara","Anuradhapura","Badulla","Batticaloa","Colombo","Galle","Gampaha",
+  "Hambantota","Jaffna","Kalutara","Kandy","Kegalle","Kilinochchi","Kurunegala",
+  "Mannar","Matale","Matara","Monaragala","Mullaitivu","Nuwara Eliya","Polonnaruwa",
+  "Puttalam","Ratnapura","Trincomalee","Vavuniya"
+].map((loc) => ({ label: loc, value: loc === "All" ? "" : loc }));
+
+// Price options
+const PRICE_OPTIONS = [
+  { label: "10,000", value: 10000 },
+  { label: "50,000", value: 50000 },
+  { label: "100,000", value: 100000 },
+  { label: "150,000", value: 150000 },
+  { label: "200,000", value: 200000 },
+  { label: "500,000", value: 500000 },
+  { label: "1,000,000", value: 1000000 },
+  { label: "2,000,000", value: 2000000 },
+];
 
 export default function HomeScreen() {
   const { user } = useAuth();
@@ -27,6 +51,18 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState("");
   const [cart, setCart] = useState([]);
+
+  const [minPrice, setMinPrice] = useState(null);
+  const [maxPrice, setMaxPrice] = useState(null);
+  const [location, setLocation] = useState("");
+
+  // Clear all filters
+  const clearFilters = () => {
+    setSearch("");
+    setMinPrice(null);
+    setMaxPrice(null);
+    setLocation("");
+  };
 
   // Fetch categories
   const fetchCategories = async () => {
@@ -74,9 +110,19 @@ export default function HomeScreen() {
   }, [selectedCategory]);
 
   // Filter products by search only (category already handled by backend)
-  const filteredProducts = products.filter((p) =>
-    p.title?.toLowerCase().includes(search.toLowerCase())
-  );
+
+  
+ // Local filtering
+  const filteredProducts = products.filter((p) => {
+    const titleMatch = p.title?.toLowerCase().includes(search.toLowerCase());
+    const minMatch = minPrice ? p.price >= minPrice : true;
+    const maxMatch = maxPrice ? p.price <= maxPrice : true;
+    const locationMatch = location
+      ? p.address?.toLowerCase().includes(location.toLowerCase())
+      : true;
+    return titleMatch && minMatch && maxMatch && locationMatch;
+  });
+
 
   // Format price with commas
   const formatPrice = (price) => {
@@ -108,30 +154,55 @@ const handleAddToCart = async (product) => {
 
   return (
     <Layout>
-      {/* Search */}
-      <View style={styles.searchContainer}>
-        <TextInput
-          placeholder="Search secondhand goods..."
-          style={styles.searchInput}
-          placeholderTextColor="#999"
-          value={search}
-          onChangeText={(text) => {
-          //  console.log("Search input:", text);
-            setSearch(text);
-          }}
-        />
+    {/* Search + Clear */}
+          <View style={styles.searchRow}>
+            <TextInput
+              placeholder="Search products..."
+              style={styles.searchInput}
+              value={search}
+              onChangeText={setSearch}
+            />
+            {(search || minPrice || maxPrice || location) && (
+              <TouchableOpacity onPress={clearFilters} style={styles.clearBtn}>
+                <MaterialCommunityIcons name="close-circle" size={28} color="#888" />
+              </TouchableOpacity>
+            )}
+          </View>
+      {/* Filters */}
+      <View style={styles.filterRow}>
+        <Dropdown
+           style={styles.dropdown}
+           data={PRICE_OPTIONS}
+          labelField="label"
+          valueField="value"
+           placeholder="Min Price"
+           search
+           value={minPrice}
+           onChange={(item) => setMinPrice(item.value)}
+         />
+         <Dropdown
+           style={styles.dropdown}
+           data={PRICE_OPTIONS}
+           labelField="label"
+           valueField="value"
+           placeholder="Max Price"
+           search
+           value={maxPrice}
+           onChange={(item) => setMaxPrice(item.value)}
+         />
+         <Dropdown
+           style={styles.dropdown}
+           data={LOCATIONS}
+           labelField="label"
+           valueField="value"
+           placeholder="Select Location"
+           search
+           value={location}
+           onChange={(item) => setLocation(item.value)}
+         />
       </View>
 
-      {/* Add Product */}
-      <TouchableOpacity
-        style={styles.addProductBtn}
-        onPress={() => {
-        //  console.log("Navigating to AddProduct screen");
-          navigation.navigate("AddProduct");
-        }}
-      >
-        <Text style={styles.addProductText}>+ Add Product</Text>
-      </TouchableOpacity>
+      
 
       <ScrollView
         style={{ flex: 1 }}
@@ -225,6 +296,8 @@ const handleAddToCart = async (product) => {
                 <Text style={styles.cardCondition}>
                   Condition: {item.condition}
                 </Text>
+                <Text style={styles.cardLocation}>📍 {item.address || "N/A"}</Text>
+
 
                 {/* Add to Cart */}
                 {/* Add to Cart OR Owner Label */}
@@ -264,14 +337,37 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 2,
   },
-  addProductBtn: {
-    backgroundColor: "#2f95dc",
-    padding: 12,
-    borderRadius: 12,
-    marginBottom: 10,
+    searchRow: {
+    flexDirection: "row",
     alignItems: "center",
+    marginBottom: 10,
   },
-  addProductText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
+  searchInput: {
+    flex: 1,
+    backgroundColor: "#fff",
+    borderRadius: 30,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    fontSize: 16,
+    elevation: 2,
+  },
+  clearBtn: { marginLeft: 8 },
+  filterRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 10,
+    gap: 8,
+  },
+  dropdown: {
+    flex: 1,
+    height: 45,
+    backgroundColor: "#fff",
+    borderRadius: 10,
+    paddingHorizontal: 5,
+    elevation: 2,
+  },
+
   categoryBtn: {
     backgroundColor: "#2f95dc",
     paddingVertical: 10,
@@ -315,6 +411,7 @@ const styles = StyleSheet.create({
   },
   cardPrice: { fontSize: 14, color: "#ff6f61", fontWeight: "bold" },
   cardCondition: { fontSize: 12, color: "#555", marginTop: 2 },
+  cardLocation: { fontSize: 12, color: "#777", marginTop: 2 },
   addToCartBtn: {
     marginTop: 10,
     backgroundColor: "#ff6f61",
