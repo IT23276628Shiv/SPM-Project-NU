@@ -1,33 +1,17 @@
 // frontend/src/screens/Chat/ModernChatScreen.js
 import React, { useState, useEffect, useRef } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  FlatList,
-  Image,
-  StyleSheet,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  Linking,
-  Modal,
-  Dimensions,
-  Keyboard,
-  Animated,
-  PanGestureHandler,
-  State,
-  StatusBar,
-  SafeAreaView
+import { 
+  View, Text, TextInput, TouchableOpacity, FlatList, Image, StyleSheet,
+  Alert, KeyboardAvoidingView, Platform, Modal, Dimensions,
+  Keyboard, Animated, StatusBar, SafeAreaView
 } from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
-import { useRoute, useNavigation } from '@react-navigation/native';
-import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import { PanGestureHandler } from 'react-native-gesture-handler';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import io from 'socket.io-client';
 import { useAuth } from '../../context/AuthContext';
 import { API_URL } from '../../constants/config';
+import { useRoute, useNavigation } from '@react-navigation/native';
 
 const { width, height } = Dimensions.get('window');
 
@@ -450,6 +434,7 @@ export default function ModernChatScreen() {
                      new Date(item.sentDate).getTime() - new Date(messages[index - 1].sentDate).getTime() > 300000);
 
     return (
+      
       <View>
         {showTime && (
           <View style={styles.timeStamp}>
@@ -1147,9 +1132,9 @@ const styles = StyleSheet.create({
   },
   closeImageButton: {
     position: 'absolute',
-    top: 50,
+    top: 40,
     right: 20,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.6)',
     borderRadius: 20,
     padding: 8,
   },
