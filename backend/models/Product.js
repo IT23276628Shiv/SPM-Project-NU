@@ -16,6 +16,16 @@ const productSchema = new mongoose.Schema(
     listedDate: { type: Date, default: Date.now },
     status: { type: String, enum: ['available', 'sold', 'swapped', 'removed'], default: 'available' },
     viewsCount: { type: Number, default: 0 },
+ swapRequests: [
+      {
+        _id: { type: mongoose.Schema.Types.ObjectId, auto: true },
+        buyerId: String,             // Firebase UID of buyer
+        buyerProductId: String,      // Product offered for swap
+        status: { type: String, enum: ['pending', 'accepted', 'rejected', 'cancelled'], default: 'pending' },
+        date: { type: Date, default: Date.now },
+      },
+    ],
+
   },
   { timestamps: true }
 );
