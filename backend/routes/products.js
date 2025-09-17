@@ -162,6 +162,51 @@ router.patch("/:productId/swap/:swapId/respond", async (req, res) => {
   }
 });
 
+// Delete product (only owner can delete, cancels swaps too)
+router.delete("/:id", authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const product = await Product.findById(id);
+    if (!product) return res.status(404).json({ error: "Product not found" });
+
+    // ✅ Authorization check
+    if (product.ownerId.toString() !== req.userId.toString()) {
+      return res.status(403).json({ error: "Not authorized to delete this product" });
+    }
+
+    // Cancel pending swaps if this is seller
+    if (product.swapRequests?.length) {
+      product.swapRequests.forEach((swap) => {
+        if (swap.status === "pending") swap.status = "cancelled";
+      });
+      await product.save();
+    }
+
+    // Cancel pending swaps where this product is used as buyer
+    const otherProducts = await Product.find({ "swapRequests.buyerProductId": id });
+    for (const p of otherProducts) {
+      let updated = false;
+      p.swapRequests.forEach((swap) => {
+        if (swap.buyerProductId === id && swap.status === "pending") {
+          swap.status = "cancelled";
+          updated = true;
+        }
+      });
+      if (updated) await p.save();
+    }
+
+    await product.deleteOne();
+
+    res.json({ message: "Product deleted successfully, related pending swaps cancelled" });
+  } catch (err) {
+    console.error("Delete product error:", err);
+    res.status(500).json({ error: "Failed to delete product" });
+  }
+});
+
+
+
 
 
 export default router;
