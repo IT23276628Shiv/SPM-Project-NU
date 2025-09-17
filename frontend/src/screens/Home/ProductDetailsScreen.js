@@ -211,13 +211,57 @@ export default function ProductDetailsScreen() {
           <TouchableOpacity 
             style={styles.editButton}
             onPress={() => {
-              // Navigate to edit product screen (you can implement this)
               Alert.alert('Edit Product', 'Edit functionality can be implemented here');
             }}
           >
             <MaterialCommunityIcons name="pencil" size={18} color="#fff" />
             <Text style={styles.editButtonText}>Edit Product</Text>
           </TouchableOpacity>
+
+          {/* ✅ Delete button only when status is available */}
+          {product.status === "available" && (
+            <TouchableOpacity 
+              style={styles.deleteButton}
+              onPress={() => {
+                Alert.alert(
+                  "Delete Product",
+                  "Are you sure you want to delete this product?",
+                  [
+                    { text: "Cancel", style: "cancel" },
+                    { 
+                      text: "Delete", 
+                      style: "destructive", 
+                      onPress: async () => {
+                        try {
+                          const token = await user.getIdToken();
+                          const response = await fetch(`${API_URL}/api/products/${product._id}`, {
+                            method: "DELETE",
+                            headers: {
+                              "Authorization": `Bearer ${token}`,
+                            },
+                          });
+
+                          if (response.ok) {
+                            Alert.alert("Deleted", "Product deleted successfully");
+                            navigation.goBack(); // ✅ Go back to product list
+                          } else {
+                            const data = await response.json();
+                            Alert.alert("Error", data.error || "Failed to delete product");
+                          }
+                        } catch (err) {
+                          console.error("Delete error:", err);
+                          Alert.alert("Error", "Something went wrong");
+                        }
+                      }
+                    }
+                  ]
+                );
+              }}
+            >
+              <MaterialCommunityIcons name="delete" size={18} color="#fff" />
+              <Text style={styles.deleteButtonText}>Delete Product</Text>
+            </TouchableOpacity>
+          )}
         </View>
       )}
     </ScrollView>
@@ -384,6 +428,20 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   editButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+    marginLeft: 6,
+  },
+  deleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#d32f2f',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    marginTop: 10,
+  },
+  deleteButtonText: {
     color: '#fff',
     fontWeight: '600',
     marginLeft: 6,
