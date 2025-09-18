@@ -26,65 +26,67 @@ export default function MyActivityScreen() {
   // Fetch ONLY my products
   const fetchMyProducts = async () => {
     try {
-      const res = await axios.get(`${API_URL}/api/products`);
+      const res = await axios.get(`${API_URL}/api/products?all=true`);
       const filtered = (res.data || []).filter(
         (p) => p.ownerId?.firebaseUid === user?.uid
       );
       setMyProducts(filtered);
     } catch (err) {
-      console.log("Error fetching my products:", err.response?.data || err.message);
+      console.log(
+        "Error fetching my products:",
+        err.response?.data || err.message
+      );
       setMyProducts([]);
     }
   };
 
   // Fetch swap requests
-  const fetchSwapRequests = async () => {
-    try {
-      const res = await axios.get(`${API_URL}/api/products`);
-      const allProducts = res.data || [];
+// Fetch swap requests
+const fetchSwapRequests = async () => {
+  try {
+    const res = await axios.get(`${API_URL}/api/products?all=true`);
+    const allProducts = res.data || [];
 
-      const requests = [];
+    const requests = [];
 
-      allProducts.forEach((product) => {
-        if (!product.swapRequests) return;
+    allProducts.forEach((product) => {
+      if (!product.swapRequests) return;
 
-        product.swapRequests.forEach((req) => {
-          if (req.buyerId === user.uid || product.ownerId?.firebaseUid === user.uid) {
-            const buyerProduct = allProducts.find(p => p._id === req.buyerProductId);
+      product.swapRequests.forEach((req) => {
+        if (req.buyerId === user.uid || product.ownerId?.firebaseUid === user.uid) {
+          const buyerProduct = allProducts.find(p => p._id === req.buyerProductId);
 
-            requests.push({
-              ...req,
-              sellerProductId: product._id,
-              sellerProductTitle: product.title,
-              sellerProductImageUrl: product.imagesUrls?.[0] || null,
-              sellerProductPrice: product.price,
-              sellerProductCondition: product.condition,
-              buyerProductId: buyerProduct?._id,
-              buyerProductTitle: buyerProduct?.title || "Your Product",
-              buyerProductImageUrl: buyerProduct?.imagesUrls?.[0] || null,
-              buyerProductPrice: buyerProduct?.price || 0,
-              buyerProductCondition: buyerProduct?.condition || "N/A",
-              sellerId: product.ownerId?.firebaseUid,
-              buyerName: req.buyerName || "Buyer",
-              status: req.status || "pending",
-            });
-          }
-        });
+          requests.push({
+            ...req,
+            sellerProductId: product._id,
+            sellerProductTitle: product.title,
+            sellerProductImageUrl: product.imagesUrls?.[0] || null,
+            sellerProductPrice: product.price,
+            sellerProductCondition: product.condition,
+            buyerProductId: buyerProduct?._id,
+            buyerProductTitle: buyerProduct?.title || "Your Product",
+            buyerProductImageUrl: buyerProduct?.imagesUrls?.[0] || null,
+            buyerProductPrice: buyerProduct?.price || 0,
+            buyerProductCondition: buyerProduct?.condition || "N/A",
+            sellerId: product.ownerId?.firebaseUid,
+            buyerName: req.buyerName || "Buyer",
+            status: req.status || "pending",
+          });
+        }
       });
+    });
 
-      // Show all pending, accepted, or rejected swaps for buyers, and all swaps for sellers
-      const filteredRequests = requests.filter(r =>
-        r.buyerId === user.uid
-          ? ["pending", "accepted", "rejected"].includes(r.status)
-          : true
-      );
+    // ✅ Sort by status: pending → accepted → rejected → cancelled
+    const statusOrder = { pending: 1, accepted: 2, rejected: 3, cancelled: 4 };
+    requests.sort((a, b) => (statusOrder[a.status] || 99) - (statusOrder[b.status] || 99));
 
-      setSwapRequests(filteredRequests);
-    } catch (err) {
-      console.log("Error fetching swaps:", err.response?.data || err.message);
-      setSwapRequests([]);
-    }
-  };
+    setSwapRequests(requests);
+  } catch (err) {
+    console.log("Error fetching swaps:", err.response?.data || err.message);
+    setSwapRequests([]);
+  }
+};
+
 
   useEffect(() => {
     onRefresh();
@@ -139,6 +141,31 @@ export default function MyActivityScreen() {
     }
   };
 
+  const renderProductCard = (item) => (
+    <TouchableOpacity
+      key={item._id}
+      style={styles.card}
+      onPress={() => navigation.navigate("ProductDetails", { product: item })}
+    >
+      {item.imagesUrls?.[0] ? (
+        <Image
+          source={{ uri: item.imagesUrls[0] }}
+          style={styles.cardImage}
+        />
+      ) : (
+        <View style={[styles.cardImage, { backgroundColor: "#ccc" }]} />
+      )}
+      <View style={styles.cardInfo}>
+        <Text style={styles.cardTitle}>{item.title}</Text>
+        <Text style={styles.cardPrice}>LKR. {formatPrice(item.price)}</Text>
+        <Text style={styles.cardCondition}>Condition: {item.condition}</Text>
+        <View style={styles.ownerBadge}>
+          <Text style={styles.ownerBadgeText}>{item.status}</Text>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+
   return (
     <Layout>
       {/* Add Product */}
@@ -155,36 +182,37 @@ export default function MyActivityScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
-        {/* My Products */}
-        <Text style={styles.sectionTitle}>My Products</Text>
+        {/* Available Products */}
+        <Text style={styles.sectionTitle}>Available Products</Text>
         <View style={styles.itemsContainer}>
-          {myProducts.length === 0 && (
-            <Text style={styles.emptyText}>You haven’t listed any products yet</Text>
+          {myProducts.filter((p) => p.status === "available").length === 0 && (
+            <Text style={styles.emptyText}>No available products</Text>
           )}
+          {myProducts
+            .filter((p) => p.status === "available")
+            .map(renderProductCard)}
+        </View>
 
-          {myProducts.map((item) => (
-            <TouchableOpacity
-              key={item._id}
-              style={styles.card}
-              onPress={() =>
-                navigation.navigate("ProductDetails", { product: item })
-              }
-            >
-              {item.imagesUrls?.[0] ? (
-                <Image source={{ uri: item.imagesUrls[0] }} style={styles.cardImage} />
-              ) : (
-                <View style={[styles.cardImage, { backgroundColor: "#ccc" }]} />
-              )}
-              <View style={styles.cardInfo}>
-                <Text style={styles.cardTitle}>{item.title}</Text>
-                <Text style={styles.cardPrice}>LKR. {formatPrice(item.price)}</Text>
-                <Text style={styles.cardCondition}>Condition: {item.condition}</Text>
-                <View style={styles.ownerBadge}>
-                  <Text style={styles.ownerBadgeText}>Your Product</Text>
-                </View>
-              </View>
-            </TouchableOpacity>
-          ))}
+        {/* Sold Products */}
+        <Text style={styles.sectionTitle}>Sold Products</Text>
+        <View style={styles.itemsContainer}>
+          {myProducts.filter((p) => p.status === "sold").length === 0 && (
+            <Text style={styles.emptyText}>No sold products</Text>
+          )}
+          {myProducts
+            .filter((p) => p.status === "sold")
+            .map(renderProductCard)}
+        </View>
+
+        {/* Swapped Products */}
+        <Text style={styles.sectionTitle}>Swapped Products</Text>
+        <View style={styles.itemsContainer}>
+          {myProducts.filter((p) => p.status === "swapped").length === 0 && (
+            <Text style={styles.emptyText}>No swapped products</Text>
+          )}
+          {myProducts
+            .filter((p) => p.status === "swapped")
+            .map(renderProductCard)}
         </View>
 
         {/* Swap Requests */}
@@ -199,27 +227,48 @@ export default function MyActivityScreen() {
               {req.buyerId === user.uid ? (
                 // Buyer view
                 <>
-                  <Text style={{ fontWeight: "bold", marginBottom: 4 }}>Seller’s Product:</Text>
+                  <Text style={{ fontWeight: "bold", marginBottom: 4 }}>
+                    Seller’s Product:
+                  </Text>
                   {req.sellerProductImageUrl ? (
-                    <Image source={{ uri: req.sellerProductImageUrl }} style={styles.cardImage} />
+                    <Image
+                      source={{ uri: req.sellerProductImageUrl }}
+                      style={styles.cardImage}
+                    />
                   ) : (
-                    <View style={[styles.cardImage, { backgroundColor: "#ccc" }]} />
+                    <View
+                      style={[styles.cardImage, { backgroundColor: "#ccc" }]}
+                    />
                   )}
                   <Text>{req.sellerProductTitle}</Text>
 
-                  <Text style={{ fontWeight: "bold", marginTop: 6 }}>Your Offered Product:</Text>
+                  <Text style={{ fontWeight: "bold", marginTop: 6 }}>
+                    Your Offered Product:
+                  </Text>
                   {req.buyerProductImageUrl ? (
-                    <Image source={{ uri: req.buyerProductImageUrl }} style={styles.cardImage} />
+                    <Image
+                      source={{ uri: req.buyerProductImageUrl }}
+                      style={styles.cardImage}
+                    />
                   ) : (
-                    <View style={[styles.cardImage, { backgroundColor: "#ccc" }]} />
+                    <View
+                      style={[styles.cardImage, { backgroundColor: "#ccc" }]}
+                    />
                   )}
                   <Text>{req.buyerProductTitle}</Text>
 
-                  <Text style={{ marginTop: 6, fontSize: 12, color: "#777" }}>Status: {req.status}</Text>
+                  <Text
+                    style={{ marginTop: 6, fontSize: 12, color: "#777" }}
+                  >
+                    Status: {req.status}
+                  </Text>
 
                   {req.status === "pending" && (
                     <TouchableOpacity
-                      style={[styles.ownerBadge, { backgroundColor: "#ff4d4f" }]}
+                      style={[
+                        styles.ownerBadge,
+                        { backgroundColor: "#ff4d4f" },
+                      ]}
                       onPress={() => cancelSwap(req)}
                     >
                       <Text style={styles.ownerBadgeText}>Cancel Request</Text>
@@ -229,37 +278,59 @@ export default function MyActivityScreen() {
               ) : (
                 // Seller view
                 <>
-                  <Text style={{ fontWeight: "bold", marginBottom: 4 }}>Your Product:</Text>
+                  <Text style={{ fontWeight: "bold", marginBottom: 4 }}>
+                    Your Product:
+                  </Text>
                   {req.sellerProductImageUrl ? (
-                    <Image source={{ uri: req.sellerProductImageUrl }} style={styles.cardImage} />
+                    <Image
+                      source={{ uri: req.sellerProductImageUrl }}
+                      style={styles.cardImage}
+                    />
                   ) : (
-                    <View style={[styles.cardImage, { backgroundColor: "#ccc" }]} />
+                    <View
+                      style={[styles.cardImage, { backgroundColor: "#ccc" }]}
+                    />
                   )}
                   <Text>{req.sellerProductTitle}</Text>
 
-                  <Text style={{ fontWeight: "bold", marginTop: 6 }}>Buyer’s Offered Product:</Text>
+                  <Text style={{ fontWeight: "bold", marginTop: 6 }}>
+                    Buyer’s Offered Product:
+                  </Text>
                   {req.buyerProductImageUrl ? (
-                    <Image source={{ uri: req.buyerProductImageUrl }} style={styles.cardImage} />
+                    <Image
+                      source={{ uri: req.buyerProductImageUrl }}
+                      style={styles.cardImage}
+                    />
                   ) : (
-                    <View style={[styles.cardImage, { backgroundColor: "#ccc" }]} />
+                    <View
+                      style={[styles.cardImage, { backgroundColor: "#ccc" }]}
+                    />
                   )}
                   <Text>{req.buyerProductTitle}</Text>
 
                   <Text style={{ marginTop: 6, fontSize: 12, color: "#555" }}>
                     {req.buyerName} wants to swap
                   </Text>
-                  <Text style={{ fontSize: 12, color: "#777" }}>Status: {req.status}</Text>
+                  <Text style={{ fontSize: 12, color: "#777" }}>
+                    Status: {req.status}
+                  </Text>
 
                   {req.status === "pending" && req.sellerId === user.uid && (
                     <View style={styles.swapActions}>
                       <TouchableOpacity
-                        style={[styles.swapActionBtn, styles.swapAcceptBtn]}
+                        style={[
+                          styles.swapActionBtn,
+                          styles.swapAcceptBtn,
+                        ]}
                         onPress={() => respondSwap(req, "accepted")}
                       >
                         <Text style={styles.ownerBadgeText}>Accept</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
-                        style={[styles.swapActionBtn, styles.swapRejectBtn]}
+                        style={[
+                          styles.swapActionBtn,
+                          styles.swapRejectBtn,
+                        ]}
                         onPress={() => respondSwap(req, "rejected")}
                       >
                         <Text style={styles.ownerBadgeText}>Reject</Text>
@@ -275,7 +346,8 @@ export default function MyActivityScreen() {
     </Layout>
   );
 }
-// Styles remain the same
+
+// Styles
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f5f5f5" },
   addProductBtn: {
@@ -326,10 +398,26 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     padding: 12,
   },
-  cardImage: { width: "100%", height: 140, borderRadius: 8, marginBottom: 10, resizeMode: "cover" },
+  cardImage: {
+    width: "100%",
+    height: 140,
+    borderRadius: 8,
+    marginBottom: 10,
+    resizeMode: "cover",
+  },
   cardInfo: { paddingHorizontal: 0, paddingVertical: 0 },
-  cardTitle: { fontSize: 16, fontWeight: "600", marginBottom: 4, color: "#333" },
-  cardPrice: { fontSize: 14, color: "#ff6f61", fontWeight: "bold", marginBottom: 2 },
+  cardTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    marginBottom: 4,
+    color: "#333",
+  },
+  cardPrice: {
+    fontSize: 14,
+    color: "#ff6f61",
+    fontWeight: "bold",
+    marginBottom: 2,
+  },
   cardCondition: { fontSize: 12, color: "#555", marginBottom: 4 },
   ownerBadge: {
     marginTop: 8,
@@ -346,7 +434,11 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
   },
   ownerBadgeText: { color: "#fff", fontWeight: "bold", fontSize: 12 },
-  swapActions: { flexDirection: "row", justifyContent: "flex-start", marginTop: 8 },
+  swapActions: {
+    flexDirection: "row",
+    justifyContent: "flex-start",
+    marginTop: 8,
+  },
   swapActionBtn: {
     flex: 1,
     paddingVertical: 8,

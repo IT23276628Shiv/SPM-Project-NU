@@ -6,26 +6,59 @@ import { authMiddleware } from "../middleware/auth.js";
 
 const router = express.Router();
 
-// Get all products (with optional category filter)
+// // Get all products (with optional category filter)
+// router.get("/", async (req, res) => {
+//   try {
+//     const { categoryId } = req.query;
+
+//     // Build filter object
+//     let filter = { status: "available" };
+//     if (categoryId) filter.categoryId = categoryId;
+
+//     const products = await Product.find(filter)
+//       .sort({ listedDate: -1 })
+//       .populate("ownerId", "username phoneNumber firebaseUid")   // populate owner name
+//       .populate("categoryId", "name"); 
+
+//     const result = products.map((p) => ({
+//       ...p.toObject(),
+//       ownerName: p.ownerId?.username || "Unknown",
+//       ownerContact: p.ownerId?.phoneNumber || "Unknown",
+//       categoryName: p.categoryId?.name || "Unknown",
+
+//     }));
+
+//     res.json(result);
+//   } catch (err) {
+//     console.error(err);
+//     res.status(500).json({ error: "Failed to fetch products" });
+//   }
+// });
+
+
+// Get all products (with optional category filter, or all statuses for activity page)
 router.get("/", async (req, res) => {
   try {
-    const { categoryId } = req.query;
+    const { categoryId, all } = req.query;
 
-    // Build filter object
-    let filter = { status: "available" };
+    let filter = {};
+    if (!all) {
+      // default: only available products
+      filter.status = "available";
+    }
+
     if (categoryId) filter.categoryId = categoryId;
 
     const products = await Product.find(filter)
       .sort({ listedDate: -1 })
-      .populate("ownerId", "username phoneNumber firebaseUid")   // populate owner name
-      .populate("categoryId", "name"); 
+      .populate("ownerId", "username phoneNumber firebaseUid")
+      .populate("categoryId", "name");
 
     const result = products.map((p) => ({
       ...p.toObject(),
       ownerName: p.ownerId?.username || "Unknown",
       ownerContact: p.ownerId?.phoneNumber || "Unknown",
       categoryName: p.categoryId?.name || "Unknown",
-
     }));
 
     res.json(result);
@@ -34,6 +67,7 @@ router.get("/", async (req, res) => {
     res.status(500).json({ error: "Failed to fetch products" });
   }
 });
+
 
 // Create product
 router.post("/", authMiddleware, async (req, res) => {
