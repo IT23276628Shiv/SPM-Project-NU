@@ -154,10 +154,14 @@ export default function ProductDetailsScreen() {
             </TouchableOpacity>
 
             {product.isForSwap && (
-              <TouchableOpacity style={styles.swapBtn}>
+              <TouchableOpacity 
+                style={styles.swapBtn}
+                onPress={() => navigation.navigate("Swap", { product })} // ✅ Pass product
+              >
                 <Text style={styles.swapBtnText}>Swap</Text>
               </TouchableOpacity>
             )}
+
           </View>
 
           {/* Communication Options */}

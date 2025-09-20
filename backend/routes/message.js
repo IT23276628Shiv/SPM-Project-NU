@@ -280,5 +280,90 @@ router.delete('/conversations/:conversationId', authMiddleware, async (req, res)
     res.status(500).json({ error: 'Failed to delete conversation' });
   }
 });
+// Delete a specific message
+router.delete('/:messageId', authMiddleware, async (req, res) => {
+  try {
+    const { messageId } = req.params;
 
+    // Find the message and verify ownership
+    const message = await Message.findById(messageId);
+    
+    if (!message) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
+
+    // Check if user owns the message
+    if (message.senderId.toString() !== req.userId.toString()) {
+      return res.status(403).json({ error: 'You can only delete your own messages' });
+    }
+
+    // Delete the message
+    await Message.findByIdAndDelete(messageId);
+
+    // Update the conversation's last message if this was the last message
+    const conversation = await Conversation.findOne({
+      $or: [
+        { participants: { $all: [message.senderId, message.receiverId] } }
+      ]
+    });
+
+    if (conversation && conversation.lastMessage.messageId?.toString() === messageId) {
+      // Find the new last message
+      const lastMessage = await Message.findOne({
+        $or: [
+          { senderId: message.senderId, receiverId: message.receiverId },
+          { senderId: message.receiverId, receiverId: message.senderId }
+        ]
+      }).sort({ sentDate: -1 });
+
+      if (lastMessage) {
+        await Conversation.findByIdAndUpdate(conversation._id, {
+          lastMessage: {
+            content: lastMessage.content || `${lastMessage.messageType} message`,
+            senderId: lastMessage.senderId,
+            messageType: lastMessage.messageType,
+            sentDate: lastMessage.sentDate
+          }
+        });
+      } else {
+        // No messages left, clear last message
+        await Conversation.findByIdAndUpdate(conversation._id, {
+          lastMessage: null
+        });
+      }
+    }
+
+    res.json({ message: 'Message deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting message:', error);
+    res.status(500).json({ error: 'Failed to delete message' });
+  }
+});
+
+// Also add this route to get product details for chat
+router.get('/product/:productId', authMiddleware, async (req, res) => {
+  try {
+    const { productId } = req.params;
+    
+    const product = await Product.findById(productId)
+      .populate('ownerId', 'username phoneNumber')
+      .populate('categoryId', 'name');
+
+    if (!product) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    res.json({ 
+      product: {
+        ...product.toObject(),
+        ownerName: product.ownerId?.username || 'Unknown',
+        ownerContact: product.ownerId?.phoneNumber || 'Unknown',
+        categoryName: product.categoryId?.name || 'Unknown'
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching product details:', error);
+    res.status(500).json({ error: 'Failed to fetch product details' });
+  }
+});
 export default router;

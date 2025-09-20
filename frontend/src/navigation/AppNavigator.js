@@ -19,6 +19,7 @@ import CartScreen from "../screens/Home/CartScreen";
 import ChatListScreen from "../screens/Chat/ChatListScreen";
 import ChatScreen from "../screens/Chat/ChatScreen";
 import MyActivityScreen from "../screens/Home/MyActivityScreen";
+import SwapScreen from "../screens/Home/SwapScreen";
 
 const Stack = createNativeStackNavigator();
 const Tabs = createBottomTabNavigator();
@@ -161,6 +162,7 @@ export default function AppNavigator() {
           tabBarLabel: 'Home',
         }}
       />
+      <Stack.Screen name="Swap" component={SwapScreen} options={{ title: "Swap Product" }} />
     </Stack.Navigator>
   );
 }

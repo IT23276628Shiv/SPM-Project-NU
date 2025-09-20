@@ -74,4 +74,94 @@ router.post("/", authMiddleware, async (req, res) => {
   }
 });
 
+// 🔹 Create swap request
+router.post("/:id/swap", async (req, res) => {
+  try {
+    const { buyerId, buyerProductId } = req.body;
+    const sellerProductId = req.params.id;
+
+    const product = await Product.findById(sellerProductId);
+    if (!product) {
+      return res.status(404).json({ error: "Product not found" });
+    }
+
+    // Push swap request
+    product.swapRequests.push({
+      buyerId,
+      buyerProductId,
+      status: "pending",
+    });
+
+    await product.save();
+
+    res.json({ message: "Swap request created", product });
+  } catch (err) {
+    console.error("Swap request error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// Cancel a swap request (buyer only)
+router.patch("/:id/swap/:requestId/cancel", async (req, res) => {
+  try {
+    const { id: productId, requestId } = req.params;
+    const product = await Product.findById(productId);
+    if (!product) return res.status(404).json({ error: "Product not found" });
+
+    const request = product.swapRequests.id(requestId);
+    if (!request) return res.status(404).json({ error: "Swap request not found" });
+
+    // Only buyer can cancel
+    if (request.buyerId !== req.body.userId) {
+      return res.status(403).json({ error: "You are not authorized to cancel this request" });
+    }
+
+    request.status = "cancelled";
+    await product.save();
+
+    res.json({ message: "Swap request cancelled", request });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+
+
+// Respond to a swap request (seller only)
+router.patch("/:productId/swap/:swapId/respond", async (req, res) => {
+  try {
+    const { productId, swapId } = req.params;
+    const { status, userId } = req.body; // userId = seller's Firebase UID
+
+    // Populate ownerId to get firebaseUid
+    const product = await Product.findById(productId).populate("ownerId", "firebaseUid");
+    if (!product) return res.status(404).json({ message: "Product not found" });
+
+    // Find swap request
+    const swapReq = product.swapRequests.id(swapId);
+    if (!swapReq) return res.status(404).json({ message: "Swap request not found" });
+
+    // Only seller can respond
+    if (product.ownerId.firebaseUid !== userId) {
+      return res.status(403).json({ message: "Not authorized" });
+    }
+
+    // Update status
+    swapReq.status = status;
+
+    // If accepted, mark product as swapped
+    if (status === "accepted") product.status = "swapped";
+
+    await product.save();
+
+    res.json({ message: "Swap request updated", product, swapReq });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+
+
 export default router;
