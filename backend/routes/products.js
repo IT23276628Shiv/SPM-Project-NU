@@ -6,26 +6,59 @@ import { authMiddleware } from "../middleware/auth.js";
 
 const router = express.Router();
 
-// Get all products (with optional category filter)
+// // Get all products (with optional category filter)
+// router.get("/", async (req, res) => {
+//   try {
+//     const { categoryId } = req.query;
+
+//     // Build filter object
+//     let filter = { status: "available" };
+//     if (categoryId) filter.categoryId = categoryId;
+
+//     const products = await Product.find(filter)
+//       .sort({ listedDate: -1 })
+//       .populate("ownerId", "username phoneNumber firebaseUid")   // populate owner name
+//       .populate("categoryId", "name"); 
+
+//     const result = products.map((p) => ({
+//       ...p.toObject(),
+//       ownerName: p.ownerId?.username || "Unknown",
+//       ownerContact: p.ownerId?.phoneNumber || "Unknown",
+//       categoryName: p.categoryId?.name || "Unknown",
+
+//     }));
+
+//     res.json(result);
+//   } catch (err) {
+//     console.error(err);
+//     res.status(500).json({ error: "Failed to fetch products" });
+//   }
+// });
+
+
+// Get all products (with optional category filter, or all statuses for activity page)
 router.get("/", async (req, res) => {
   try {
-    const { categoryId } = req.query;
+    const { categoryId, all } = req.query;
 
-    // Build filter object
-    let filter = { status: "available" };
+    let filter = {};
+    if (!all) {
+      // default: only available products
+      filter.status = "available";
+    }
+
     if (categoryId) filter.categoryId = categoryId;
 
     const products = await Product.find(filter)
       .sort({ listedDate: -1 })
-      .populate("ownerId", "username phoneNumber firebaseUid")   // populate owner name
-      .populate("categoryId", "name"); 
+      .populate("ownerId", "username phoneNumber firebaseUid")
+      .populate("categoryId", "name");
 
     const result = products.map((p) => ({
       ...p.toObject(),
       ownerName: p.ownerId?.username || "Unknown",
       ownerContact: p.ownerId?.phoneNumber || "Unknown",
       categoryName: p.categoryId?.name || "Unknown",
-
     }));
 
     res.json(result);
@@ -34,6 +67,7 @@ router.get("/", async (req, res) => {
     res.status(500).json({ error: "Failed to fetch products" });
   }
 });
+
 
 // Create product
 router.post("/", authMiddleware, async (req, res) => {
@@ -161,6 +195,51 @@ router.patch("/:productId/swap/:swapId/respond", async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
+// Delete product (only owner can delete, cancels swaps too)
+router.delete("/:id", authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const product = await Product.findById(id);
+    if (!product) return res.status(404).json({ error: "Product not found" });
+
+    // ✅ Authorization check
+    if (product.ownerId.toString() !== req.userId.toString()) {
+      return res.status(403).json({ error: "Not authorized to delete this product" });
+    }
+
+    // Cancel pending swaps if this is seller
+    if (product.swapRequests?.length) {
+      product.swapRequests.forEach((swap) => {
+        if (swap.status === "pending") swap.status = "cancelled";
+      });
+      await product.save();
+    }
+
+    // Cancel pending swaps where this product is used as buyer
+    const otherProducts = await Product.find({ "swapRequests.buyerProductId": id });
+    for (const p of otherProducts) {
+      let updated = false;
+      p.swapRequests.forEach((swap) => {
+        if (swap.buyerProductId === id && swap.status === "pending") {
+          swap.status = "cancelled";
+          updated = true;
+        }
+      });
+      if (updated) await p.save();
+    }
+
+    await product.deleteOne();
+
+    res.json({ message: "Product deleted successfully, related pending swaps cancelled" });
+  } catch (err) {
+    console.error("Delete product error:", err);
+    res.status(500).json({ error: "Failed to delete product" });
+  }
+});
+
+
 
 
 
