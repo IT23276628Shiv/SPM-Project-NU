@@ -9,6 +9,7 @@ import {
   Image,
   Alert,
   ActivityIndicator,
+  SectionList,
 } from "react-native";
 import { useRoute, useNavigation } from "@react-navigation/native";
 import { useAuth } from "../../context/AuthContext";
@@ -25,77 +26,77 @@ export default function SwapScreen() {
   const [selectedProduct, setSelectedProduct] = useState(null);
 
   // Fetch buyer's products
-    useEffect(() => {
+  useEffect(() => {
     const fetchMyProducts = async () => {
-        try {
+      try {
         const res = await fetch(`${API_URL}/api/products`);
         const data = await res.json();
 
         if (res.ok) {
-            // 🔹 Only my products
-            const mine = (data || []).filter(
+          // 🔹 Only my products
+          const mine = (data || []).filter(
             (p) => p.ownerId?.firebaseUid === user?.uid
-            );
+          );
 
-            // 🔹 Only "available"
-            const available = mine.filter(
+          // 🔹 Only "available"
+          const available = mine.filter(
             (p) => p.status?.toLowerCase() === "available"
-            );
+          );
 
-            // 🔹 Match price (exact)
-            const matching = available.filter(
+          // 🔹 Price match ONLY (no category restriction)
+          const matching = available.filter(
             (p) => Number(p.price) === Number(product.price)
-            );
+          );
 
-            setMyProducts(matching);
+          setMyProducts(matching);
         } else {
-            Alert.alert("Error", data.error || "Failed to fetch products");
+          Alert.alert("Error", data.error || "Failed to fetch products");
         }
-        } catch (err) {
+      } catch (err) {
         console.error("Error fetching swap products:", err);
         Alert.alert("Error", "Something went wrong");
-        } finally {
+      } finally {
         setLoading(false);
-        }
+      }
     };
 
     fetchMyProducts();
-    }, []);
+  }, []);
 
-
-
-    const handleConfirmSwap = async () => {
+  const handleConfirmSwap = async () => {
     if (!selectedProduct) {
-        return Alert.alert("Select Product", "Please select one of your products for swap.");
+      return Alert.alert(
+        "Select Product",
+        "Please select one of your products for swap."
+      );
     }
 
     try {
-        const token = await user.getIdToken();
-        const res = await fetch(`${API_URL}/api/products/${product._id}/swap`, {
+      const token = await user.getIdToken();
+      const res = await fetch(`${API_URL}/api/products/${product._id}/swap`, {
         method: "POST",
-        headers: { 
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}`,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-            buyerId: user.uid,                  // logged-in buyer
-            buyerProductId: selectedProduct._id // product they’re offering
+          buyerId: user.uid, // logged-in buyer
+          buyerProductId: selectedProduct._id, // product they’re offering
         }),
-        });
+      });
 
-        const data = await res.json();
-        if (res.ok) {
-        Alert.alert("Success", "Swap request sent to seller!");
+      const data = await res.json();
+      if (res.ok) {
+        Alert.alert("✅ Success", "Swap request sent to seller!");
         navigation.goBack();
-        } else {
+      } else {
         Alert.alert("Error", data.error || "Failed to send swap request");
-        }
+      }
     } catch (err) {
-        console.error("Swap error:", err);
-        Alert.alert("Error", "Something went wrong");
+      console.error("Swap error:", err);
+      Alert.alert("Error", "Something went wrong");
     }
-    };
-
+  };
 
   if (loading) {
     return (
@@ -105,6 +106,18 @@ export default function SwapScreen() {
     );
   }
 
+  // Group by category for nicer UI
+  const sections = myProducts.reduce((acc, item) => {
+    const category = item.category || "Other";
+    const existing = acc.find((s) => s.title === category);
+    if (existing) {
+      existing.data.push(item);
+    } else {
+      acc.push({ title: category, data: [item] });
+    }
+    return acc;
+  }, []);
+
   return (
     <View style={styles.container}>
       {/* Seller’s Product */}
@@ -112,7 +125,9 @@ export default function SwapScreen() {
         <Text style={styles.sectionTitle}>Product You Want</Text>
         <Image source={{ uri: product.imagesUrls?.[0] }} style={styles.image} />
         <Text style={styles.title}>{product.title}</Text>
-        <Text style={styles.price}>LKR {Number(product.price).toLocaleString()}</Text>
+        <Text style={styles.price}>
+          LKR {Number(product.price).toLocaleString()}
+        </Text>
       </View>
 
       {/* Your Products */}
@@ -121,13 +136,16 @@ export default function SwapScreen() {
       {myProducts.length === 0 ? (
         <View style={styles.center}>
           <Text style={styles.noProductText}>
-            No matching products available for swap.
+            No products with matching price available for swap.
           </Text>
         </View>
       ) : (
-        <FlatList
-          data={myProducts}
+        <SectionList
+          sections={sections}
           keyExtractor={(item) => item._id}
+          renderSectionHeader={({ section: { title } }) => (
+            <Text style={styles.categoryHeader}>{title}</Text>
+          )}
           renderItem={({ item }) => (
             <TouchableOpacity
               style={[
@@ -136,10 +154,15 @@ export default function SwapScreen() {
               ]}
               onPress={() => setSelectedProduct(item)}
             >
-              <Image source={{ uri: item.imagesUrls?.[0] }} style={styles.imageSmall} />
+              <Image
+                source={{ uri: item.imagesUrls?.[0] }}
+                style={styles.imageSmall}
+              />
               <View style={{ flex: 1, marginLeft: 10 }}>
                 <Text style={styles.productTitle}>{item.title}</Text>
-                <Text style={styles.priceSmall}>LKR {Number(item.price).toLocaleString()}</Text>
+                <Text style={styles.priceSmall}>
+                  LKR {Number(item.price).toLocaleString()}
+                </Text>
               </View>
             </TouchableOpacity>
           )}
@@ -159,8 +182,16 @@ export default function SwapScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16, backgroundColor: "#fff" },
   sectionTitle: { fontSize: 18, fontWeight: "bold", marginVertical: 10 },
-  sellerProduct: { alignItems: "center", marginBottom: 20 },
-  image: { width: 200, height: 200, borderRadius: 8 },
+  sellerProduct: {
+    alignItems: "center",
+    marginBottom: 20,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#eee",
+    borderRadius: 10,
+    backgroundColor: "#fafafa",
+  },
+  image: { width: 200, height: 200, borderRadius: 10 },
   imageSmall: { width: 80, height: 80, borderRadius: 8 },
   title: { fontSize: 18, fontWeight: "bold", marginTop: 8 },
   productTitle: { fontSize: 16, fontWeight: "600" },
@@ -172,10 +203,19 @@ const styles = StyleSheet.create({
     padding: 12,
     marginVertical: 6,
     borderWidth: 1,
-    borderColor: "#ccc",
+    borderColor: "#ddd",
     borderRadius: 8,
+    backgroundColor: "#fff",
+    elevation: 1,
   },
   selectedCard: { borderColor: "#4caf50", backgroundColor: "#e8f5e9" },
+  categoryHeader: {
+    fontSize: 16,
+    fontWeight: "bold",
+    marginTop: 15,
+    marginBottom: 5,
+    color: "#333",
+  },
   confirmBtn: {
     backgroundColor: "#4caf50",
     padding: 14,

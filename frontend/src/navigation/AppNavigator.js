@@ -162,7 +162,10 @@ export default function AppNavigator() {
           tabBarLabel: 'Home',
         }}
       />
-      <Stack.Screen name="Swap" component={SwapScreen} options={{ title: "Swap Product" }} />
+      <Stack.Screen name="Swap" component={SwapScreen} options={{ title: "Swap Product",  headerShown: true,
+          headerStyle: { backgroundColor: '#2f95dc' },
+          headerTintColor: '#fff',
+          headerTitleStyle: { fontWeight: 'bold' }, }} />
     </Stack.Navigator>
   );
 }
