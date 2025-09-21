@@ -2,8 +2,7 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import authfirebase from '../../services/firebaseAuth';
-
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://172.16.20.210:5000';
+import { API_URL } from "../constants/config";
 
 const AuthContext = createContext();
 
@@ -13,27 +12,36 @@ export const AuthProvider = ({ children }) => {
   const [userDetails, setUserDetails] = useState(null);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(authfirebase, async (firebaseUser) => {
-      if (firebaseUser) {
-        setUser(firebaseUser);
+  const unsubscribe = onAuthStateChanged(authfirebase, async (firebaseUser) => {
+    if (firebaseUser) {
+      setUser(firebaseUser);
 
-        try {
-          const res = await fetch(`${API_URL}/users/${firebaseUser.uid}`);
-          const data = await res.json();
-          setUserDetails(data);
-        } catch (err) {
-          console.log("Error fetching user details:", err);
-        }
+      try {
+        // Get Firebase ID token
+        const token = await firebaseUser.getIdToken();
 
-      } else {
-        setUser(null);
-        setUserDetails(null);
+        const res = await fetch(`${API_URL}/api/auth/user/${firebaseUser.uid}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,  // <-- send token
+          },
+        });
+
+        const data = await res.json();
+        setUserDetails(data.user); // note: your backend returns { user: {...} }
+      } catch (err) {
+        console.log("Error fetching user details:", err);
       }
-      setLoading(false);
-    });
 
-    return () => unsubscribe();
-  }, []);
+    } else {
+      setUser(null);
+      setUserDetails(null);
+    }
+    setLoading(false);
+  });
+
+  return () => unsubscribe();
+}, []);
+
 
   const logout = async () => {
     try {

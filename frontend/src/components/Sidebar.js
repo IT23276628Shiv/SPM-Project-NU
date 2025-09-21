@@ -22,7 +22,7 @@ export default function Sidebar({ sidebarAnim, onClose }) {
 //   const [user, setUser] = useState({ username: "Guest", email: "guest@example.com", profile: null });
   const navigation = useNavigation();
 
-  const { user} = useAuth();
+  const { user, signOut, userDetails } = useAuth();
 
   
 
@@ -76,7 +76,7 @@ export default function Sidebar({ sidebarAnim, onClose }) {
             style={styles.profileImage}
           />
           <View style={styles.userDetails}>
-            <Text style={styles.username}>Guest</Text>
+            <Text style={styles.username}>{userDetails.username}</Text>
             <Text style={styles.email}>{user.email}</Text>
           </View>
         </View>
@@ -88,7 +88,7 @@ export default function Sidebar({ sidebarAnim, onClose }) {
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.sidebarItem} >
-          <MaterialIcons name="person" size={22} color="#2f95dc" style={styles.icon} />
+          <MaterialIcons name="person" size={22} color="#2f95dc" style={styles.icon} onPress={() => navigation.navigate("Profile")} />
           <Text style={[styles.sidebarText, { color: "#2f95dc" }]}>Profile</Text>
         </TouchableOpacity>
 

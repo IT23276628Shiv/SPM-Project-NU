@@ -6,9 +6,7 @@ import authfirebase from '../../../services/firebaseAuth';
 import { Ionicons } from '@expo/vector-icons'; // for eye icon
 import { Alert } from 'react-native';
 import { onAuthStateChanged, signOut } from "firebase/auth";
-
-const API_URL = process.env.EXPO_PUBLIC_API_URL;
-
+import { API_URL } from "../../constants/config";
 
 const { width, height } = Dimensions.get('window');
 
@@ -83,7 +81,7 @@ export default function RegisterScreen({ navigation }) {
     const response = await fetch(`${API_URL}/api/auth/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: name, email, passwordHash:password }) // no firebaseUid here
+      body: JSON.stringify({ username: name, email, password }) // no firebaseUid here
     });
 
     const data = await response.json();
