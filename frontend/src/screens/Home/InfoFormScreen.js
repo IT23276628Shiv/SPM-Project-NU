@@ -5,7 +5,7 @@ import {
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import authfirebase from '../../../services/firebaseAuth';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL;
+import { API_URL } from "../../constants/config";
 
 // List of Sri Lankan districts
 const districts = [

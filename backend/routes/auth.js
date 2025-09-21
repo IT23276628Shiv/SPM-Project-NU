@@ -12,6 +12,7 @@ router.post('/register', async (req, res) => {
   try {
     const { username, email, password } = req.body;
 
+
     if (!username || !email || !password) {
       return res.status(400).json({ error: 'All fields are required' });
     }
@@ -94,6 +95,7 @@ router.put('/:userId/updateProfile', async (req, res) => {
 router.get('/user/:firebaseUid', authMiddleware, async (req, res) => {
   try {
     const { firebaseUid } = req.params;
+    console.log('Fetching user with Firebase UID:', firebaseUid);
     
     const user = await User.findOne({ firebaseUid })
       .select('-passwordHash')
