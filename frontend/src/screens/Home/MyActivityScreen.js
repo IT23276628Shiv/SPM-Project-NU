@@ -1,5 +1,5 @@
 // frontend/src/screens/Home/MyActivityScreen.jsx
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import {
   View,
   ScrollView,
@@ -23,6 +23,31 @@ export default function MyActivityScreen() {
   const [swapRequests, setSwapRequests] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
 
+  // Keep track of Y positions of sections
+  const sectionPositions = useRef({});
+  const scrollRef = useRef(null);
+
+  // Derived counts
+  const availableCount = myProducts.filter((p) => p.status === "available").length;
+  const soldCount = myProducts.filter((p) => p.status === "sold").length;
+  const swappedCount = myProducts.filter((p) => p.status === "swapped").length;
+  const pendingRequestsCount = swapRequests.filter((r) => r.status === "pending").length;
+
+  // Scroll to section by key
+  const scrollToSection = (key) => {
+    if (scrollRef.current && sectionPositions.current[key] !== undefined) {
+      scrollRef.current.scrollTo({
+        y: sectionPositions.current[key],
+        animated: true,
+      });
+    }
+  };
+
+  // Save section layout positions
+  const handleLayout = (key, event) => {
+    sectionPositions.current[key] = event.nativeEvent.layout.y;
+  };
+
   // Fetch ONLY my products
   const fetchMyProducts = async () => {
     try {
@@ -32,61 +57,57 @@ export default function MyActivityScreen() {
       );
       setMyProducts(filtered);
     } catch (err) {
-      console.log(
-        "Error fetching my products:",
-        err.response?.data || err.message
-      );
+      console.log("Error fetching my products:", err.response?.data || err.message);
       setMyProducts([]);
     }
   };
 
   // Fetch swap requests
-// Fetch swap requests
-const fetchSwapRequests = async () => {
-  try {
-    const res = await axios.get(`${API_URL}/api/products?all=true`);
-    const allProducts = res.data || [];
+  const fetchSwapRequests = async () => {
+    try {
+      const res = await axios.get(`${API_URL}/api/products?all=true`);
+      const allProducts = res.data || [];
 
-    const requests = [];
+      const requests = [];
+      allProducts.forEach((product) => {
+        if (!product.swapRequests) return;
 
-    allProducts.forEach((product) => {
-      if (!product.swapRequests) return;
+        product.swapRequests.forEach((req) => {
+          if (req.buyerId === user.uid || product.ownerId?.firebaseUid === user.uid) {
+            const buyerProduct = allProducts.find((p) => p._id === req.buyerProductId);
 
-      product.swapRequests.forEach((req) => {
-        if (req.buyerId === user.uid || product.ownerId?.firebaseUid === user.uid) {
-          const buyerProduct = allProducts.find(p => p._id === req.buyerProductId);
-
-          requests.push({
-            ...req,
-            sellerProductId: product._id,
-            sellerProductTitle: product.title,
-            sellerProductImageUrl: product.imagesUrls?.[0] || null,
-            sellerProductPrice: product.price,
-            sellerProductCondition: product.condition,
-            buyerProductId: buyerProduct?._id,
-            buyerProductTitle: buyerProduct?.title || "Your Product",
-            buyerProductImageUrl: buyerProduct?.imagesUrls?.[0] || null,
-            buyerProductPrice: buyerProduct?.price || 0,
-            buyerProductCondition: buyerProduct?.condition || "N/A",
-            sellerId: product.ownerId?.firebaseUid,
-            buyerName: req.buyerName || "Buyer",
-            status: req.status || "pending",
-          });
-        }
+            requests.push({
+              ...req,
+              sellerProductId: product._id,
+              sellerProductTitle: product.title,
+              sellerProductImageUrl: product.imagesUrls?.[0] || null,
+              sellerProductPrice: product.price,
+              sellerProductCondition: product.condition,
+              buyerProductId: buyerProduct?._id,
+              buyerProductTitle: buyerProduct?.title || "Your Product",
+              buyerProductImageUrl: buyerProduct?.imagesUrls?.[0] || null,
+              buyerProductPrice: buyerProduct?.price || 0,
+              buyerProductCondition: buyerProduct?.condition || "N/A",
+              sellerId: product.ownerId?.firebaseUid,
+              buyerName: req.buyerName || "Buyer",
+              status: req.status || "pending",
+            });
+          }
+        });
       });
-    });
 
-    // ✅ Sort by status: pending → accepted → rejected → cancelled
-    const statusOrder = { pending: 1, accepted: 2, rejected: 3, cancelled: 4 };
-    requests.sort((a, b) => (statusOrder[a.status] || 99) - (statusOrder[b.status] || 99));
+      // Sort by status: pending → accepted → rejected → cancelled
+      const statusOrder = { pending: 1, accepted: 2, rejected: 3, cancelled: 4 };
+      requests.sort(
+        (a, b) => (statusOrder[a.status] || 99) - (statusOrder[b.status] || 99)
+      );
 
-    setSwapRequests(requests);
-  } catch (err) {
-    console.log("Error fetching swaps:", err.response?.data || err.message);
-    setSwapRequests([]);
-  }
-};
-
+      setSwapRequests(requests);
+    } catch (err) {
+      console.log("Error fetching swaps:", err.response?.data || err.message);
+      setSwapRequests([]);
+    }
+  };
 
   useEffect(() => {
     onRefresh();
@@ -148,10 +169,7 @@ const fetchSwapRequests = async () => {
       onPress={() => navigation.navigate("ProductDetails", { product: item })}
     >
       {item.imagesUrls?.[0] ? (
-        <Image
-          source={{ uri: item.imagesUrls[0] }}
-          style={styles.cardImage}
-        />
+        <Image source={{ uri: item.imagesUrls[0] }} style={styles.cardImage} />
       ) : (
         <View style={[styles.cardImage, { backgroundColor: "#ccc" }]} />
       )}
@@ -176,47 +194,69 @@ const fetchSwapRequests = async () => {
         <Text style={styles.addProductText}>+ Add Product</Text>
       </TouchableOpacity>
 
+      {/* Stats Section */}
+      <View style={styles.statsContainer}>
+        <TouchableOpacity style={styles.statBox} onPress={() => scrollToSection("available")}>
+          <Text style={styles.statNumber}>{availableCount}</Text>
+          <Text style={styles.statLabel}>Available</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.statBox} onPress={() => scrollToSection("sold")}>
+          <Text style={styles.statNumber}>{soldCount}</Text>
+          <Text style={styles.statLabel}>Sold</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.statBox} onPress={() => scrollToSection("swapped")}>
+          <Text style={styles.statNumber}>{swappedCount}</Text>
+          <Text style={styles.statLabel}>Swapped</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.statBox} onPress={() => scrollToSection("requests")}>
+          <Text style={styles.statNumber}>{pendingRequestsCount}</Text>
+          <Text style={styles.statLabel}>SwapRequest</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Scrollable Section */}
       <ScrollView
+        ref={scrollRef}
         style={{ flex: 1 }}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
         {/* Available Products */}
-        <Text style={styles.sectionTitle}>Available Products</Text>
+        <View onLayout={(e) => handleLayout("available", e)}>
+          <Text style={styles.sectionTitle}>Available Products</Text>
+        </View>
         <View style={styles.itemsContainer}>
           {myProducts.filter((p) => p.status === "available").length === 0 && (
             <Text style={styles.emptyText}>No available products</Text>
           )}
-          {myProducts
-            .filter((p) => p.status === "available")
-            .map(renderProductCard)}
+          {myProducts.filter((p) => p.status === "available").map(renderProductCard)}
         </View>
 
         {/* Sold Products */}
-        <Text style={styles.sectionTitle}>Sold Products</Text>
+        <View onLayout={(e) => handleLayout("sold", e)}>
+          <Text style={styles.sectionTitle}>Sold Products</Text>
+        </View>
         <View style={styles.itemsContainer}>
           {myProducts.filter((p) => p.status === "sold").length === 0 && (
             <Text style={styles.emptyText}>No sold products</Text>
           )}
-          {myProducts
-            .filter((p) => p.status === "sold")
-            .map(renderProductCard)}
+          {myProducts.filter((p) => p.status === "sold").map(renderProductCard)}
         </View>
 
         {/* Swapped Products */}
-        <Text style={styles.sectionTitle}>Swapped Products</Text>
+        <View onLayout={(e) => handleLayout("swapped", e)}>
+          <Text style={styles.sectionTitle}>Swapped Products</Text>
+        </View>
         <View style={styles.itemsContainer}>
           {myProducts.filter((p) => p.status === "swapped").length === 0 && (
             <Text style={styles.emptyText}>No swapped products</Text>
           )}
-          {myProducts
-            .filter((p) => p.status === "swapped")
-            .map(renderProductCard)}
+          {myProducts.filter((p) => p.status === "swapped").map(renderProductCard)}
         </View>
 
         {/* Swap Requests */}
-        <Text style={styles.sectionTitle}>Swap Requests</Text>
+        <View onLayout={(e) => handleLayout("requests", e)}>
+          <Text style={styles.sectionTitle}>Swap Requests</Text>
+        </View>
         <View style={styles.itemsContainer}>
           {swapRequests.length === 0 && (
             <Text style={styles.emptyText}>No swap requests yet</Text>
@@ -227,48 +267,29 @@ const fetchSwapRequests = async () => {
               {req.buyerId === user.uid ? (
                 // Buyer view
                 <>
-                  <Text style={{ fontWeight: "bold", marginBottom: 4 }}>
-                    Seller’s Product:
-                  </Text>
+                  <Text style={{ fontWeight: "bold", marginBottom: 4 }}>Seller’s Product:</Text>
                   {req.sellerProductImageUrl ? (
-                    <Image
-                      source={{ uri: req.sellerProductImageUrl }}
-                      style={styles.cardImage}
-                    />
+                    <Image source={{ uri: req.sellerProductImageUrl }} style={styles.cardImage} />
                   ) : (
-                    <View
-                      style={[styles.cardImage, { backgroundColor: "#ccc" }]}
-                    />
+                    <View style={[styles.cardImage, { backgroundColor: "#ccc" }]} />
                   )}
                   <Text>{req.sellerProductTitle}</Text>
 
-                  <Text style={{ fontWeight: "bold", marginTop: 6 }}>
-                    Your Offered Product:
-                  </Text>
+                  <Text style={{ fontWeight: "bold", marginTop: 6 }}>Your Offered Product:</Text>
                   {req.buyerProductImageUrl ? (
-                    <Image
-                      source={{ uri: req.buyerProductImageUrl }}
-                      style={styles.cardImage}
-                    />
+                    <Image source={{ uri: req.buyerProductImageUrl }} style={styles.cardImage} />
                   ) : (
-                    <View
-                      style={[styles.cardImage, { backgroundColor: "#ccc" }]}
-                    />
+                    <View style={[styles.cardImage, { backgroundColor: "#ccc" }]} />
                   )}
                   <Text>{req.buyerProductTitle}</Text>
 
-                  <Text
-                    style={{ marginTop: 6, fontSize: 12, color: "#777" }}
-                  >
+                  <Text style={{ marginTop: 6, fontSize: 12, color: "#777" }}>
                     Status: {req.status}
                   </Text>
 
                   {req.status === "pending" && (
                     <TouchableOpacity
-                      style={[
-                        styles.ownerBadge,
-                        { backgroundColor: "#ff4d4f" },
-                      ]}
+                      style={[styles.ownerBadge, { backgroundColor: "#ff4d4f" }]}
                       onPress={() => cancelSwap(req)}
                     >
                       <Text style={styles.ownerBadgeText}>Cancel Request</Text>
@@ -278,59 +299,37 @@ const fetchSwapRequests = async () => {
               ) : (
                 // Seller view
                 <>
-                  <Text style={{ fontWeight: "bold", marginBottom: 4 }}>
-                    Your Product:
-                  </Text>
+                  <Text style={{ fontWeight: "bold", marginBottom: 4 }}>Your Product:</Text>
                   {req.sellerProductImageUrl ? (
-                    <Image
-                      source={{ uri: req.sellerProductImageUrl }}
-                      style={styles.cardImage}
-                    />
+                    <Image source={{ uri: req.sellerProductImageUrl }} style={styles.cardImage} />
                   ) : (
-                    <View
-                      style={[styles.cardImage, { backgroundColor: "#ccc" }]}
-                    />
+                    <View style={[styles.cardImage, { backgroundColor: "#ccc" }]} />
                   )}
                   <Text>{req.sellerProductTitle}</Text>
 
-                  <Text style={{ fontWeight: "bold", marginTop: 6 }}>
-                    Buyer’s Offered Product:
-                  </Text>
+                  <Text style={{ fontWeight: "bold", marginTop: 6 }}>Buyer’s Offered Product:</Text>
                   {req.buyerProductImageUrl ? (
-                    <Image
-                      source={{ uri: req.buyerProductImageUrl }}
-                      style={styles.cardImage}
-                    />
+                    <Image source={{ uri: req.buyerProductImageUrl }} style={styles.cardImage} />
                   ) : (
-                    <View
-                      style={[styles.cardImage, { backgroundColor: "#ccc" }]}
-                    />
+                    <View style={[styles.cardImage, { backgroundColor: "#ccc" }]} />
                   )}
                   <Text>{req.buyerProductTitle}</Text>
 
                   <Text style={{ marginTop: 6, fontSize: 12, color: "#555" }}>
                     {req.buyerName} wants to swap
                   </Text>
-                  <Text style={{ fontSize: 12, color: "#777" }}>
-                    Status: {req.status}
-                  </Text>
+                  <Text style={{ fontSize: 12, color: "#777" }}>Status: {req.status}</Text>
 
                   {req.status === "pending" && req.sellerId === user.uid && (
                     <View style={styles.swapActions}>
                       <TouchableOpacity
-                        style={[
-                          styles.swapActionBtn,
-                          styles.swapAcceptBtn,
-                        ]}
+                        style={[styles.swapActionBtn, styles.swapAcceptBtn]}
                         onPress={() => respondSwap(req, "accepted")}
                       >
                         <Text style={styles.ownerBadgeText}>Accept</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
-                        style={[
-                          styles.swapActionBtn,
-                          styles.swapRejectBtn,
-                        ]}
+                        style={[styles.swapActionBtn, styles.swapRejectBtn]}
                         onPress={() => respondSwap(req, "rejected")}
                       >
                         <Text style={styles.ownerBadgeText}>Reject</Text>
@@ -453,4 +452,33 @@ const styles = StyleSheet.create({
   },
   swapAcceptBtn: { backgroundColor: "green" },
   swapRejectBtn: { backgroundColor: "red" },
+
+  statsContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginHorizontal: 8,
+    marginBottom: 20,
+    backgroundColor: "#fff",
+    padding: 12,
+    borderRadius: 12,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  statBox: {
+    flex: 1,
+    alignItems: "center",
+  },
+  statNumber: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#2f95dc",
+  },
+  statLabel: {
+    fontSize: 12,
+    color: "#555",
+    marginTop: 4,
+  },
 });
