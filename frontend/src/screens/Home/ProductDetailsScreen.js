@@ -106,6 +106,7 @@ export default function ProductDetailsScreen() {
   }
 
   const isOwner = product?.ownerId?.firebaseUid === user?.uid;
+  const canEditOrBuySwap = product.status === "available"; // ✅ Only available products
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
@@ -145,63 +146,56 @@ export default function ProductDetailsScreen() {
         {product.address && <Text style={styles.field}>Location: {product.address}</Text>}
       </View>
 
-      {!isOwner && (
-        <>
-          {/* Action Buttons */}
-          <View style={styles.buttonsContainer}>
-            <TouchableOpacity style={styles.buyBtn}>
-              <Text style={styles.buyBtnText}>Buy Now</Text>
+      {canEditOrBuySwap && !isOwner && (
+        <View style={styles.buttonsContainer}>
+          <TouchableOpacity style={styles.buyBtn}>
+            <Text style={styles.buyBtnText}>Buy Now</Text>
+          </TouchableOpacity>
+
+          {product.isForSwap && (
+            <TouchableOpacity 
+              style={styles.swapBtn}
+              onPress={() => navigation.navigate("Swap", { product })}
+            >
+              <Text style={styles.swapBtnText}>Swap</Text>
             </TouchableOpacity>
-
-            {product.isForSwap && (
-              <TouchableOpacity 
-                style={styles.swapBtn}
-                onPress={() => navigation.navigate("Swap", { product })} // ✅ Pass product
-              >
-                <Text style={styles.swapBtnText}>Swap</Text>
-              </TouchableOpacity>
-            )}
-
-          </View>
-
-          {/* Communication Options */}
-          <View style={styles.communicationContainer}>
-            <Text style={styles.communicationTitle}>Contact Seller</Text>
-            
-            <View style={styles.iconsContainer}>
-              {/* Chat Button */}
-              <TouchableOpacity 
-                style={styles.iconBtn} 
-                onPress={handleStartChat}
-              >
-                <MaterialCommunityIcons name="chat" size={24} color="#4caf50" />
-                <Text style={styles.iconLabel}>Chat</Text>
-              </TouchableOpacity>
-
-              {/* WhatsApp Button */}
-              <TouchableOpacity 
-                style={styles.iconBtn} 
-                onPress={handleWhatsApp}
-              >
-                <MaterialCommunityIcons name="whatsapp" size={24} color="#25D366" />
-                <Text style={styles.iconLabel}>WhatsApp</Text>
-              </TouchableOpacity>
-
-              {/* Call Button */}
-              <TouchableOpacity 
-                style={styles.iconBtn} 
-                onPress={handleCall}
-              >
-                <MaterialCommunityIcons name="phone" size={24} color="#2f95dc" />
-                <Text style={styles.iconLabel}>Call</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </>
+          )}
+        </View>
       )}
 
-      {/* Owner Badge for own products */}
-      {isOwner && (
+      {!isOwner && (
+        <View style={styles.communicationContainer}>
+          <Text style={styles.communicationTitle}>Contact Seller</Text>
+          
+          <View style={styles.iconsContainer}>
+            <TouchableOpacity 
+              style={styles.iconBtn} 
+              onPress={handleStartChat}
+            >
+              <MaterialCommunityIcons name="chat" size={24} color="#4caf50" />
+              <Text style={styles.iconLabel}>Chat</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.iconBtn} 
+              onPress={handleWhatsApp}
+            >
+              <MaterialCommunityIcons name="whatsapp" size={24} color="#25D366" />
+              <Text style={styles.iconLabel}>WhatsApp</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.iconBtn} 
+              onPress={handleCall}
+            >
+              <MaterialCommunityIcons name="phone" size={24} color="#2f95dc" />
+              <Text style={styles.iconLabel}>Call</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {isOwner && canEditOrBuySwap && (
         <View style={styles.ownerSection}>
           <View style={styles.ownerBadge}>
             <MaterialCommunityIcons name="account-check" size={20} color="#fff" />
@@ -218,7 +212,6 @@ export default function ProductDetailsScreen() {
             <Text style={styles.editButtonText}>Edit Product</Text>
           </TouchableOpacity>
 
-          {/* ✅ Delete button only when status is available */}
           {product.status === "available" && (
             <TouchableOpacity 
               style={styles.deleteButton}
@@ -243,7 +236,7 @@ export default function ProductDetailsScreen() {
 
                           if (response.ok) {
                             Alert.alert("Deleted", "Product deleted successfully");
-                            navigation.goBack(); // ✅ Go back to product list
+                            navigation.goBack();
                           } else {
                             const data = await response.json();
                             Alert.alert("Error", data.error || "Failed to delete product");
