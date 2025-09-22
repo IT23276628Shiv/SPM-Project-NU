@@ -166,6 +166,14 @@ export default function AppNavigator() {
           headerStyle: { backgroundColor: '#2f95dc' },
           headerTintColor: '#fff',
           headerTitleStyle: { fontWeight: 'bold' }, }} />
+
+      <Stack.Screen 
+        name="Profile" 
+        component={ProfileScreen}
+        options={{
+          tabBarLabel: 'Profile',
+        }}
+      />
     </Stack.Navigator>
   );
 }

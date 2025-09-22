@@ -169,7 +169,8 @@ router.patch("/:productId/swap/:swapId/respond", async (req, res) => {
     const { status, userId } = req.body; // userId = seller's Firebase UID
 
     // Populate ownerId to get firebaseUid
-    const product = await Product.findById(productId).populate("ownerId", "firebaseUid");
+    const product = await Product.findById(productId)
+      .populate("ownerId", "firebaseUid");
     if (!product) return res.status(404).json({ message: "Product not found" });
 
     // Find swap request
@@ -184,8 +185,16 @@ router.patch("/:productId/swap/:swapId/respond", async (req, res) => {
     // Update status
     swapReq.status = status;
 
-    // If accepted, mark product as swapped
-    if (status === "accepted") product.status = "swapped";
+    if (status === "accepted") {
+      // Mark seller’s product as swapped
+      product.status = "swapped";
+
+      // Also mark buyer’s offered product as swapped
+      await Product.findByIdAndUpdate(
+        swapReq.buyerProductId,
+        { status: "swapped" }
+      );
+    }
 
     await product.save();
 
@@ -195,6 +204,7 @@ router.patch("/:productId/swap/:swapId/respond", async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
 
 // Delete product (only owner can delete, cancels swaps too)
 router.delete("/:id", authMiddleware, async (req, res) => {

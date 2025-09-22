@@ -87,7 +87,7 @@ export default function Sidebar({ sidebarAnim, onClose }) {
           <Text style={[styles.sidebarText, { color: "#2f95dc" }]}>Home</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.sidebarItem} >
+        <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate("Profile")} >
           <MaterialIcons name="person" size={22} color="#2f95dc" style={styles.icon} onPress={() => navigation.navigate("Profile")} />
           <Text style={[styles.sidebarText, { color: "#2f95dc" }]}>Profile</Text>
         </TouchableOpacity>

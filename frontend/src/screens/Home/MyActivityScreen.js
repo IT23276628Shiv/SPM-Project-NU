@@ -23,17 +23,14 @@ export default function MyActivityScreen() {
   const [swapRequests, setSwapRequests] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Keep track of Y positions of sections
   const sectionPositions = useRef({});
   const scrollRef = useRef(null);
 
-  // Derived counts
   const availableCount = myProducts.filter((p) => p.status === "available").length;
   const soldCount = myProducts.filter((p) => p.status === "sold").length;
   const swappedCount = myProducts.filter((p) => p.status === "swapped").length;
   const pendingRequestsCount = swapRequests.filter((r) => r.status === "pending").length;
 
-  // Scroll to section by key
   const scrollToSection = (key) => {
     if (scrollRef.current && sectionPositions.current[key] !== undefined) {
       scrollRef.current.scrollTo({
@@ -43,12 +40,10 @@ export default function MyActivityScreen() {
     }
   };
 
-  // Save section layout positions
   const handleLayout = (key, event) => {
     sectionPositions.current[key] = event.nativeEvent.layout.y;
   };
 
-  // Fetch ONLY my products
   const fetchMyProducts = async () => {
     try {
       const res = await axios.get(`${API_URL}/api/products?all=true`);
@@ -62,45 +57,33 @@ export default function MyActivityScreen() {
     }
   };
 
-  // Fetch swap requests
   const fetchSwapRequests = async () => {
     try {
       const res = await axios.get(`${API_URL}/api/products?all=true`);
       const allProducts = res.data || [];
 
       const requests = [];
+
       allProducts.forEach((product) => {
         if (!product.swapRequests) return;
 
         product.swapRequests.forEach((req) => {
+          // Include swap if user is buyer or seller
           if (req.buyerId === user.uid || product.ownerId?.firebaseUid === user.uid) {
             const buyerProduct = allProducts.find((p) => p._id === req.buyerProductId);
 
             requests.push({
               ...req,
-              sellerProductId: product._id,
-              sellerProductTitle: product.title,
-              sellerProductImageUrl: product.imagesUrls?.[0] || null,
-              sellerProductPrice: product.price,
-              sellerProductCondition: product.condition,
-              buyerProductId: buyerProduct?._id,
-              buyerProductTitle: buyerProduct?.title || "Your Product",
-              buyerProductImageUrl: buyerProduct?.imagesUrls?.[0] || null,
-              buyerProductPrice: buyerProduct?.price || 0,
-              buyerProductCondition: buyerProduct?.condition || "N/A",
+              sellerProduct: product,
+              buyerProduct: buyerProduct || { _id: req.buyerProductId, title: "Your Product", imagesUrls: [], price: 0, condition: "N/A" },
               sellerId: product.ownerId?.firebaseUid,
-              buyerName: req.buyerName || "Buyer",
-              status: req.status || "pending",
             });
           }
         });
       });
 
-      // Sort by status: pending → accepted → rejected → cancelled
       const statusOrder = { pending: 1, accepted: 2, rejected: 3, cancelled: 4 };
-      requests.sort(
-        (a, b) => (statusOrder[a.status] || 99) - (statusOrder[b.status] || 99)
-      );
+      requests.sort((a, b) => (statusOrder[a.status] || 99) - (statusOrder[b.status] || 99));
 
       setSwapRequests(requests);
     } catch (err) {
@@ -109,10 +92,6 @@ export default function MyActivityScreen() {
     }
   };
 
-  useEffect(() => {
-    onRefresh();
-  }, []);
-
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     Promise.all([fetchMyProducts(), fetchSwapRequests()]).finally(() =>
@@ -120,16 +99,19 @@ export default function MyActivityScreen() {
     );
   }, []);
 
+  useEffect(() => {
+    onRefresh();
+  }, []);
+
   const formatPrice = (price) => {
     if (!price) return "N/A";
     return price.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   };
 
-  // Cancel swap (buyer)
   const cancelSwap = async (req) => {
     try {
       await axios.patch(
-        `${API_URL}/api/products/${req.sellerProductId}/swap/${req._id}/cancel`,
+        `${API_URL}/api/products/${req.sellerProduct._id}/swap/${req._id}/cancel`,
         { userId: user.uid }
       );
       fetchSwapRequests();
@@ -138,11 +120,10 @@ export default function MyActivityScreen() {
     }
   };
 
-  // Respond swap (seller)
   const respondSwap = async (req, action) => {
     try {
       await axios.patch(
-        `${API_URL}/api/products/${req.sellerProductId}/swap/${req._id}/respond`,
+        `${API_URL}/api/products/${req.sellerProduct._id}/swap/${req._id}/respond`,
         { status: action, userId: user.uid }
       );
 
@@ -153,7 +134,7 @@ export default function MyActivityScreen() {
       if (action === "accepted") {
         setMyProducts((prev) =>
           prev.map((p) =>
-            p._id === req.sellerProductId ? { ...p, status: "swapped" } : p
+            p._id === req.sellerProduct._id ? { ...p, status: "swapped" } : p
           )
         );
       }
@@ -214,7 +195,6 @@ export default function MyActivityScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Scrollable Section */}
       <ScrollView
         ref={scrollRef}
         style={{ flex: 1 }}
@@ -265,28 +245,33 @@ export default function MyActivityScreen() {
           {swapRequests.map((req) => (
             <View key={req._id} style={styles.card}>
               {req.buyerId === user.uid ? (
-                // Buyer view
                 <>
+                  {/* Buyer View */}
                   <Text style={{ fontWeight: "bold", marginBottom: 4 }}>Seller’s Product:</Text>
-                  {req.sellerProductImageUrl ? (
-                    <Image source={{ uri: req.sellerProductImageUrl }} style={styles.cardImage} />
-                  ) : (
-                    <View style={[styles.cardImage, { backgroundColor: "#ccc" }]} />
-                  )}
-                  <Text>{req.sellerProductTitle}</Text>
+                  <TouchableOpacity
+                    onPress={() => navigation.navigate("ProductDetails", { product: req.sellerProduct })}
+                  >
+                    {req.sellerProduct.imagesUrls?.[0] ? (
+                      <Image source={{ uri: req.sellerProduct.imagesUrls[0] }} style={styles.cardImage} />
+                    ) : (
+                      <View style={[styles.cardImage, { backgroundColor: "#ccc" }]} />
+                    )}
+                    <Text>{req.sellerProduct.title}</Text>
+                  </TouchableOpacity>
 
                   <Text style={{ fontWeight: "bold", marginTop: 6 }}>Your Offered Product:</Text>
-                  {req.buyerProductImageUrl ? (
-                    <Image source={{ uri: req.buyerProductImageUrl }} style={styles.cardImage} />
-                  ) : (
-                    <View style={[styles.cardImage, { backgroundColor: "#ccc" }]} />
-                  )}
-                  <Text>{req.buyerProductTitle}</Text>
+                  <TouchableOpacity
+                    onPress={() => navigation.navigate("ProductDetails", { product: req.buyerProduct })}
+                  >
+                    {req.buyerProduct.imagesUrls?.[0] ? (
+                      <Image source={{ uri: req.buyerProduct.imagesUrls[0] }} style={styles.cardImage} />
+                    ) : (
+                      <View style={[styles.cardImage, { backgroundColor: "#ccc" }]} />
+                    )}
+                    <Text>{req.buyerProduct.title}</Text>
+                  </TouchableOpacity>
 
-                  <Text style={{ marginTop: 6, fontSize: 12, color: "#777" }}>
-                    Status: {req.status}
-                  </Text>
-
+                  <Text style={{ marginTop: 6, fontSize: 12, color: "#777" }}>Status: {req.status}</Text>
                   {req.status === "pending" && (
                     <TouchableOpacity
                       style={[styles.ownerBadge, { backgroundColor: "#ff4d4f" }]}
@@ -297,23 +282,31 @@ export default function MyActivityScreen() {
                   )}
                 </>
               ) : (
-                // Seller view
                 <>
+                  {/* Seller View */}
                   <Text style={{ fontWeight: "bold", marginBottom: 4 }}>Your Product:</Text>
-                  {req.sellerProductImageUrl ? (
-                    <Image source={{ uri: req.sellerProductImageUrl }} style={styles.cardImage} />
-                  ) : (
-                    <View style={[styles.cardImage, { backgroundColor: "#ccc" }]} />
-                  )}
-                  <Text>{req.sellerProductTitle}</Text>
+                  <TouchableOpacity
+                    onPress={() => navigation.navigate("ProductDetails", { product: req.sellerProduct })}
+                  >
+                    {req.sellerProduct.imagesUrls?.[0] ? (
+                      <Image source={{ uri: req.sellerProduct.imagesUrls[0] }} style={styles.cardImage} />
+                    ) : (
+                      <View style={[styles.cardImage, { backgroundColor: "#ccc" }]} />
+                    )}
+                    <Text>{req.sellerProduct.title}</Text>
+                  </TouchableOpacity>
 
                   <Text style={{ fontWeight: "bold", marginTop: 6 }}>Buyer’s Offered Product:</Text>
-                  {req.buyerProductImageUrl ? (
-                    <Image source={{ uri: req.buyerProductImageUrl }} style={styles.cardImage} />
-                  ) : (
-                    <View style={[styles.cardImage, { backgroundColor: "#ccc" }]} />
-                  )}
-                  <Text>{req.buyerProductTitle}</Text>
+                  <TouchableOpacity
+                    onPress={() => navigation.navigate("ProductDetails", { product: req.buyerProduct })}
+                  >
+                    {req.buyerProduct.imagesUrls?.[0] ? (
+                      <Image source={{ uri: req.buyerProduct.imagesUrls[0] }} style={styles.cardImage} />
+                    ) : (
+                      <View style={[styles.cardImage, { backgroundColor: "#ccc" }]} />
+                    )}
+                    <Text>{req.buyerProduct.title}</Text>
+                  </TouchableOpacity>
 
                   <Text style={{ marginTop: 6, fontSize: 12, color: "#555" }}>
                     {req.buyerName} wants to swap
@@ -345,6 +338,7 @@ export default function MyActivityScreen() {
     </Layout>
   );
 }
+
 
 // Styles
 const styles = StyleSheet.create({
