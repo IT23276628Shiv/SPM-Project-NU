@@ -1,48 +1,98 @@
-// screens/ForgotPasswordScreen.js
+// screens/ChangePasswordScreen.js
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Dimensions, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Dimensions, Alert, ActivityIndicator } from 'react-native';
+import { getAuth,signInWithEmailAndPassword , updatePassword } from 'firebase/auth';
+import authfirebase from '../../../services/firebaseAuth';
+
 
 const { width, height } = Dimensions.get('window');
 
-export default function ForgotPasswordScreen({ navigation }) {
+export default function ChangePasswordScreen({ navigation }) {
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [loading, setLoading] = useState(false); // loading state
 
-  const handleReset = () => {
-    // Add your password reset logic here
-    console.log('Reset link sent to:', email);
+  const handleChangePassword = async () => {
+    if (!email || !password || !confirmPassword) {
+      Alert.alert("Error", "All fields are required");
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      Alert.alert("Error", "Passwords do not match");
+      return;
+    }
+
+    try {
+      setLoading(true); // start loading
+      const auth = getAuth();
+
+      // Re-authenticate user
+      const userCredential = await signInWithEmailAndPassword(authfirebase, email, password);
+      const user = userCredential.user;
+
+      await updatePassword(user, password);
+
+      Alert.alert("Success", "Password changed successfully!", [
+        { text: "OK", onPress: () => navigation.navigate("SuccessScreen") }
+      ]);
+    } catch (error) {
+      console.error(error);
+      Alert.alert("Error", error.message || "Something went wrong!");
+    } finally {
+      setLoading(false); // stop loading
+    }
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      style={styles.container}
-    >
-      <Text style={styles.title}>Forgot Password?</Text>
-      <Text style={styles.subtitle}>
-        Enter your registered email below and we’ll send you a link to reset your password.
-      </Text>
+    <View style={styles.container}>
+      <Text style={styles.title}>Change Password</Text>
 
-      {/* Email Input */}
       <TextInput
         style={styles.input}
         placeholder="Email"
         placeholderTextColor="#888"
         value={email}
         onChangeText={setEmail}
-        keyboardType="email-address"
         autoCapitalize="none"
+        keyboardType="email-address"
       />
 
-      {/* Reset Password Button */}
-      <TouchableOpacity style={styles.button} onPress={handleReset} activeOpacity={0.8}>
-        <Text style={styles.buttonText}>Reset Password</Text>
+      <TextInput
+        style={styles.input}
+        placeholder="New Password"
+        placeholderTextColor="#888"
+        secureTextEntry
+        value={password}
+        onChangeText={setPassword}
+      />
+
+      <TextInput
+        style={styles.input}
+        placeholder="Confirm Password"
+        placeholderTextColor="#888"
+        secureTextEntry
+        value={confirmPassword}
+        onChangeText={setConfirmPassword}
+      />
+
+      <TouchableOpacity
+        style={[styles.button, loading && styles.buttonDisabled]}
+        onPress={handleChangePassword}
+        disabled={loading} // disable while loading
+      >
+        {loading ? (
+          <ActivityIndicator size="small" color="#fff" />
+        ) : (
+          <Text style={styles.buttonText}>Update Password</Text>
+        )}
       </TouchableOpacity>
 
-      {/* Back to Login */}
-      <TouchableOpacity onPress={() => navigation.goBack()}>
+      <TouchableOpacity onPress={() => navigation.goBack()} disabled={loading}>
         <Text style={styles.backText}>Back to Login</Text>
       </TouchableOpacity>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
@@ -59,14 +109,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#2f95dc',
     textAlign: 'center',
-    marginBottom: 10,
-  },
-  subtitle: {
-    fontSize: width * 0.045,
-    color: '#555',
-    textAlign: 'center',
-    marginBottom: 30,
-    paddingHorizontal: 10,
+    marginBottom: 20,
   },
   input: {
     width: '100%',
@@ -75,7 +118,7 @@ const styles = StyleSheet.create({
     borderRadius: 25,
     paddingHorizontal: 20,
     fontSize: width * 0.045,
-    marginBottom: 25,
+    marginBottom: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -87,12 +130,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#2f95dc',
     paddingVertical: height * 0.02,
     borderRadius: 30,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 5,
-    elevation: 5,
     marginBottom: 20,
+    alignItems: 'center',
+  },
+  buttonDisabled: {
+    backgroundColor: '#a1c8e9', // lighter blue when disabled
   },
   buttonText: {
     color: '#fff',
