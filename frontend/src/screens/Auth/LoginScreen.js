@@ -1,8 +1,6 @@
-// screens/LoginScreen.js
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Dimensions, KeyboardAvoidingView, Platform, Image } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Dimensions, KeyboardAvoidingView, Platform, Image, ActivityIndicator } from 'react-native';
 import { Alert } from 'react-native';
-
 import { signInWithEmailAndPassword } from "firebase/auth";
 import authfirebase from '../../../services/firebaseAuth';
 
@@ -11,35 +9,40 @@ const { width, height } = Dimensions.get('window');
 export default function LoginScreen({ navigation }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false); // loading state
 
   const handleLogin = () => {
+    if (!email || !password) {
+      Alert.alert("Error", "Please enter email and password.");
+      return;
+    }
+
+    setLoading(true); // start loading
 
     signInWithEmailAndPassword(authfirebase, email, password)
-  .then((userCredential) => {
-    const loggedUser = userCredential.user;
-    // navigation.navigate("Main", { screen: "Home" });
-    
-  })
-  .catch((error) => {
-    console.log(error.code, error.message);
+      .then((userCredential) => {
+        const loggedUser = userCredential.user;
+        setLoading(false);
+        // navigation.navigate("Main", { screen: "Home" });
+      })
+      .catch((error) => {
+        setLoading(false);
+        console.log(error.code, error.message);
 
-    // Handle specific Firebase errors
-    switch (error.code) {
-      case "auth/invalid-credential":
-        Alert.alert("Invalid Credentail","Wrong password or login info. Please try again.")
-        break;
-
-      default:
-        Alert.alert("Error", error.message);
-        break;
-    }
-  });
-
+        switch (error.code) {
+          case "auth/invalid-credential":
+            Alert.alert("Invalid Credential","Wrong password or login info. Please try again.");
+            break;
+          default:
+            Alert.alert("Error", error.message);
+            break;
+        }
+      });
   };
 
   const handleGoogleLogin = () => {
     console.log('Login with Google');
-    // Integrate Google login logic here
+    // Implement Google login
   };
 
   return (
@@ -47,6 +50,13 @@ export default function LoginScreen({ navigation }) {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       style={styles.container}
     >
+      {loading && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="large" color="#2f95dc" />
+          <Text style={styles.loadingText}>Please wait...</Text>
+        </View>
+      )}
+
       <Text style={styles.title}>Welcome Back!</Text>
       <Text style={styles.subtitle}>Login to continue exploring thrift items.</Text>
 
@@ -91,7 +101,7 @@ export default function LoginScreen({ navigation }) {
       {/* Google Login */}
       <TouchableOpacity style={styles.googleButton} onPress={handleGoogleLogin} activeOpacity={0.8}>
         <Image 
-          source={require('../../../assets/google.png')} // Use a small Google icon in assets
+          source={require('../../../assets/google.png')}
           style={styles.googleIcon}
         />
         <Text style={styles.googleText}>Login with Google</Text>
@@ -115,6 +125,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 25,
+  },
+  loadingOverlay: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.25)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  loadingText: {
+    marginTop: 15,
+    color: '#2f95dc',
+    fontSize: width * 0.05,
+    fontWeight: '600',
   },
   title: {
     fontSize: width * 0.08,
