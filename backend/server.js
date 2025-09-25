@@ -10,6 +10,9 @@ import productRoutes from './routes/products.js';
 import categoriesRouter from './routes/category.js';
 import messageRoutes from './routes/message.js';
 import { initializeSocket } from './socket/socketHandler.js';
+import favoritesRoute from "./routes/favorite.js";
+
+
 
 dotenv.config();
 
@@ -48,6 +51,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/categories', categoriesRouter);
 app.use('/api/messages', messageRoutes);
+app.use("/api/favorites", favoritesRoute);
 
 // 404 handler
 app.use((req, res) => {
