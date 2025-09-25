@@ -31,9 +31,7 @@ export default function HomeScreen() {
   // Fetch categories
   const fetchCategories = async () => {
     try {
-     // console.log("Fetching categories...");
       const res = await axios.get(`${API_URL}/api/categories`);
-     // console.log("Fetched categories:", res.data);
       setCategories(res.data || []);
     } catch (e) {
       console.log("Error fetching categories:", e.response?.data || e.message);
@@ -41,16 +39,14 @@ export default function HomeScreen() {
     }
   };
 
-  // Fetch products (backend filtering by category)
+  // Fetch products
   const fetchProducts = async (categoryId = "") => {
     try {
       const url = categoryId
         ? `${API_URL}/api/products?categoryId=${categoryId}`
         : `${API_URL}/api/products`;
 
-     // console.log("Fetching products from:", url);
       const res = await axios.get(url);
-      //console.log("Fetched products:", res.data);
       setProducts(res.data || []);
     } catch (e) {
       console.log("Error fetching products:", e.response?.data || e.message);
@@ -58,53 +54,47 @@ export default function HomeScreen() {
     }
   };
 
-  // Refresh when screen is focused
   useFocusEffect(
     useCallback(() => {
-     // console.log("Screen focused → fetching categories & products");
       fetchCategories();
       fetchProducts();
     }, [])
   );
 
   const onRefresh = useCallback(() => {
-   // console.log("Refreshing products for category:", selectedCategory);
     setRefreshing(true);
     fetchProducts(selectedCategory).finally(() => setRefreshing(false));
   }, [selectedCategory]);
 
-  // Filter products by search only (category already handled by backend)
   const filteredProducts = products.filter((p) =>
     p.title?.toLowerCase().includes(search.toLowerCase())
   );
 
-  // Format price with commas
   const formatPrice = (price) => {
     if (!price) return "N/A";
     return price.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   };
 
-
   // Add to cart
-const handleAddToCart = async (product) => {
-  try {
-    const key = `cart_${user._id}`;  // make it user-specific
-    const storedCart = await AsyncStorage.getItem(key);
-    const cartItems = storedCart ? JSON.parse(storedCart) : [];
+  const handleAddToCart = async (product) => {
+    try {
+      const key = `cart_${user._id}`;
+      const storedCart = await AsyncStorage.getItem(key);
+      const cartItems = storedCart ? JSON.parse(storedCart) : [];
 
-    if (cartItems.some((item) => item._id === product._id)) {
-      Alert.alert("Info", "Product already in cart");
-      return;
+      if (cartItems.some((item) => item._id === product._id)) {
+        Alert.alert("Info", "Product already in cart");
+        return;
+      }
+
+      const updatedCart = [...cartItems, product];
+      await AsyncStorage.setItem(key, JSON.stringify(updatedCart));
+
+      Alert.alert("Success", `${product.title} added to cart`);
+    } catch (err) {
+      console.log("Error saving cart:", err);
     }
-
-    const updatedCart = [...cartItems, product];
-    await AsyncStorage.setItem(key, JSON.stringify(updatedCart));
-
-    Alert.alert("Success", `${product.title} added to cart`);
-  } catch (err) {
-    console.log("Error saving cart:", err);
-  }
-};
+  };
 
   return (
     <Layout>
@@ -113,22 +103,16 @@ const handleAddToCart = async (product) => {
         <TextInput
           placeholder="Search secondhand goods..."
           style={styles.searchInput}
-          placeholderTextColor="#999"
+          placeholderTextColor="#777"
           value={search}
-          onChangeText={(text) => {
-          //  console.log("Search input:", text);
-            setSearch(text);
-          }}
+          onChangeText={(text) => setSearch(text)}
         />
       </View>
 
       {/* Add Product */}
       <TouchableOpacity
         style={styles.addProductBtn}
-        onPress={() => {
-        //  console.log("Navigating to AddProduct screen");
-          navigation.navigate("AddProduct");
-        }}
+        onPress={() => navigation.navigate("AddProduct")}
       >
         <Text style={styles.addProductText}>+ Add Product</Text>
       </TouchableOpacity>
@@ -151,9 +135,8 @@ const handleAddToCart = async (product) => {
               selectedCategory === "" && styles.selectedCategory,
             ]}
             onPress={() => {
-            //  console.log("Selected category: All");
               setSelectedCategory("");
-              fetchProducts(); // Fetch all products
+              fetchProducts();
             }}
           >
             <Text
@@ -174,9 +157,8 @@ const handleAddToCart = async (product) => {
                 selectedCategory === cat._id && styles.selectedCategory,
               ]}
               onPress={() => {
-              //  console.log("Selected category:", cat);
                 setSelectedCategory(cat._id);
-                fetchProducts(cat._id); // Fetch products by category
+                fetchProducts(cat._id);
               }}
             >
               <Text
@@ -204,10 +186,7 @@ const handleAddToCart = async (product) => {
             <TouchableOpacity
               key={item._id}
               style={styles.card}
-              onPress={() => {
-              //  console.log("Navigating to ProductDetails with:", item);
-                navigation.navigate("ProductDetails", { product: item });
-              }}
+              onPress={() => navigation.navigate("ProductDetails", { product: item })}
             >
               {item.imagesUrls?.[0] ? (
                 <Image
@@ -215,32 +194,27 @@ const handleAddToCart = async (product) => {
                   style={styles.cardImage}
                 />
               ) : (
-                <View style={[styles.cardImage, { backgroundColor: "#ccc" }]} />
+                <View style={[styles.cardImage, { backgroundColor: "#DADADA" }]} />
               )}
               <View style={styles.cardInfo}>
                 <Text style={styles.cardTitle}>{item.title}</Text>
-                <Text style={styles.cardPrice}>
-                  LKR. {formatPrice(item.price)}
-                </Text>
+                <Text style={styles.cardPrice}>LKR {formatPrice(item.price)}</Text>
                 <Text style={styles.cardCondition}>
                   Condition: {item.condition}
                 </Text>
 
-                {/* Add to Cart */}
-                {/* Add to Cart OR Owner Label */}
-              {item.ownerId?.firebaseUid === user?.uid ? (
-                <View style={styles.ownerBadge}>
-                 <Text style={styles.ownerBadgeText}>Your Product</Text>
-                </View>
+                {item.ownerId?.firebaseUid === user?.uid ? (
+                  <View style={styles.ownerBadge}>
+                    <Text style={styles.ownerBadgeText}>Your Product</Text>
+                  </View>
                 ) : (
-                <TouchableOpacity
-                  style={styles.addToCartBtn}
-                  onPress={() => handleAddToCart(item)}
-                >
-                  <Text style={styles.addToCartText}>Add to Cart</Text>
-                </TouchableOpacity>
-              )}
-
+                  <TouchableOpacity
+                    style={styles.addToCartBtn}
+                    onPress={() => handleAddToCart(item)}
+                  >
+                    <Text style={styles.addToCartText}>Add to Cart</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             </TouchableOpacity>
           ))}
@@ -253,85 +227,77 @@ const handleAddToCart = async (product) => {
 const styles = StyleSheet.create({
   searchContainer: { marginBottom: 10 },
   searchInput: {
-    backgroundColor: "#fff",
-    borderRadius: 30,
-    paddingHorizontal: 20,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 25,
+    paddingHorizontal: 18,
     paddingVertical: 10,
     fontSize: 16,
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    borderWidth: 1,
+    borderColor: "#CED4DA",
   },
   addProductBtn: {
-    backgroundColor: "#2f95dc",
+    backgroundColor: "#2F6F61", // Muted green (Floof style)
     padding: 12,
-    borderRadius: 12,
-    marginBottom: 10,
+    borderRadius: 25,
+    marginBottom: 20,
     alignItems: "center",
   },
-  addProductText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
+  addProductText: { color: "#fff", fontWeight: "600", fontSize: 16 },
   categoryBtn: {
-    backgroundColor: "#2f95dc",
-    paddingVertical: 10,
-    paddingHorizontal: 18,
+    backgroundColor: "#E1EDE7",
+    paddingVertical: 8,
+    paddingHorizontal: 16,
     borderRadius: 20,
-    marginRight: 12,
+    marginRight: 10,
   },
-  categoryText: { color: "#fff", fontWeight: "600" },
-  selectedCategory: { backgroundColor: "#ff6f61" },
-  selectedCategoryText: { color: "#fff", fontWeight: "bold" },
+  categoryText: { color: "#2F6F61", fontWeight: "500" },
+  selectedCategory: { backgroundColor: "#2F6F61" },
+  selectedCategoryText: { color: "#fff" },
   sectionTitle: {
-    fontSize: 22,
-    fontWeight: "bold",
+    fontSize: 20,
+    fontWeight: "700",
     marginBottom: 15,
-    color: "#ff6f61",
+    color: "#2F2F2F",
   },
   itemsContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "space-between",
+    marginBottom: -10,
   },
   card: {
     width: "48%",
     backgroundColor: "#fff",
-    borderRadius: 12,
+    borderRadius: 16,
     marginBottom: 20,
     overflow: "hidden",
-    elevation: 3,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 5,
+    borderWidth: 1,
+    borderColor: "#E6E6E6",
   },
-  cardImage: { width: "100%", height: 140 },
-  cardInfo: { padding: 10 },
+  cardImage: { width: "100%", height: 140, borderTopLeftRadius: 16, borderTopRightRadius: 16 },
+  cardInfo: { padding: 12 },
   cardTitle: {
     fontSize: 16,
     fontWeight: "600",
     marginBottom: 6,
-    color: "#333",
+    color: "#2F2F2F",
   },
-  cardPrice: { fontSize: 14, color: "#ff6f61", fontWeight: "bold" },
-  cardCondition: { fontSize: 12, color: "#555", marginTop: 2 },
+  cardPrice: { fontSize: 14, color: "#2F6F61", fontWeight: "bold" },
+  cardCondition: { fontSize: 12, color: "#6C757D", marginTop: 2 },
   addToCartBtn: {
     marginTop: 10,
-    backgroundColor: "#ff6f61",
+    backgroundColor: "#2F6F61",
     paddingVertical: 8,
-    borderRadius: 8,
+    borderRadius: 20,
     alignItems: "center",
   },
-  addToCartText: { color: "#fff", fontWeight: "bold" },
-
+  addToCartText: { color: "#fff", fontWeight: "600" },
   ownerBadge: {
-  marginTop: 10,
-  backgroundColor: "#2f95dc",
-  paddingVertical: 8,
-  borderRadius: 8,
-  alignItems: "center",
-},
-ownerBadgeText: { color: "#fff", fontWeight: "bold" },
-
+    marginTop: 10,
+    backgroundColor: "#ADB5BD",
+    paddingVertical: 8,
+    borderRadius: 20,
+    alignItems: "center",
+  },
+  ownerBadgeText: { color: "#fff", fontWeight: "600" },
 });
-

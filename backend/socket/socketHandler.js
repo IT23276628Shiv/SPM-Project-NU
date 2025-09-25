@@ -1,7 +1,8 @@
-// backend/socket/socketHandler.js (Updated with better error handling)
+// backend/socket/socketHandler.js (Updated with notification support)
 import { Server } from 'socket.io';
 import Message from '../models/message.js';
 import Conversation from '../models/Conversation.js';
+import Notification from '../models/Notification.js';
 
 const connectedUsers = new Map(); // userId -> socketId
 const userSockets = new Map(); // socketId -> userId
@@ -9,8 +10,8 @@ const userSockets = new Map(); // socketId -> userId
 export const initializeSocket = (server) => {
   const io = new Server(server, {
     cors: {
-      origin: ['http://localhost:5000', 'http://localhost:8081', 'http://192.168.8.156:5000', 'http://192.168.1.230:5000','http://172.20.10.14:5000', 'https:172.16.20.210:5000', 'https://chatapp-phi.vercel.app', 'https://chatapp-phi-git-main-ankitkumarverma.vercel.app'],
-      methods: ['GET', 'POST'],
+      origin: ['http://localhost:5000', 'http://localhost:8081', 'http://192.168.8.156:5000','http://192.168.8.101:5000', 'http://192.168.1.230:5000','http://172.20.10.14:5000', 'https:172.16.20.210:5000', 'https://chatapp-phi.vercel.app', 'https://chatapp-phi-git-main-ankitkumarverma.vercel.app'],
+      methods: ['GET', 'POST'], 
       credentials: true
     },
     transports: ['websocket', 'polling'],
@@ -35,6 +36,9 @@ export const initializeSocket = (server) => {
         
         // Broadcast user online status
         socket.broadcast.emit('userOnline', { userId, isOnline: true });
+        
+        // Send any pending notifications
+        sendPendingNotifications(socket, userId);
         
         console.log(`👤 User ${userId} connected with socket ${socket.id}`);
       } catch (error) {
@@ -104,6 +108,17 @@ export const initializeSocket = (server) => {
               
               // Emit delivery confirmation to sender
               socket.emit('messageDelivered', { messageId: message._id });
+              
+              // Emit notification event to recipient
+              const recipientSocketId = connectedUsers.get(otherParticipant._id.toString());
+              if (recipientSocketId) {
+                io.to(recipientSocketId).emit('newNotification', {
+                  type: 'new_message',
+                  conversationId,
+                  message: message.content || 'New message',
+                  timestamp: new Date()
+                });
+              }
             }
           }
         } catch (dbError) {
@@ -171,6 +186,40 @@ export const initializeSocket = (server) => {
       }
     });
 
+    // Handle notification events
+    socket.on('markNotificationRead', async (data) => {
+      try {
+        const { notificationId } = data;
+        const userId = userSockets.get(socket.id);
+        
+        if (notificationId && userId) {
+          await Notification.findOneAndUpdate(
+            { _id: notificationId, recipientId: userId },
+            { isRead: true, readAt: new Date() }
+          );
+          
+          // Emit updated unread count
+          const unreadCount = await Notification.getUnreadCount(userId);
+          socket.emit('unreadCountUpdate', { count: unreadCount });
+        }
+      } catch (error) {
+        console.error('Error marking notification as read:', error);
+      }
+    });
+
+    // Handle requesting unread count
+    socket.on('getUnreadCount', async () => {
+      try {
+        const userId = userSockets.get(socket.id);
+        if (userId) {
+          const unreadCount = await Notification.getUnreadCount(userId);
+          socket.emit('unreadCountUpdate', { count: unreadCount });
+        }
+      } catch (error) {
+        console.error('Error getting unread count:', error);
+      }
+    });
+
     // Handle voice/video call requests
     socket.on('callUser', (data) => {
       try {
@@ -189,6 +238,18 @@ export const initializeSocket = (server) => {
             callType,
             conversationId
           });
+          
+          // Emit notification for missed call later if not answered
+          setTimeout(() => {
+            if (receiverSocketId) {
+              io.to(receiverSocketId).emit('newNotification', {
+                type: 'call_missed',
+                callerId,
+                message: 'Missed call',
+                timestamp: new Date()
+              });
+            }
+          }, 30000); // 30 seconds
         } else {
           socket.emit('callError', { error: 'User is offline' });
         }
@@ -281,6 +342,36 @@ export const initializeSocket = (server) => {
   return io;
 };
 
+// Helper function to send pending notifications to newly connected user
+const sendPendingNotifications = async (socket, userId) => {
+  try {
+    // Get recent unread notifications
+    const notifications = await Notification.find({
+      recipientId: userId,
+      isRead: false,
+      createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } // Last 24 hours
+    })
+    .populate('senderId', 'username profilePictureUrl')
+    .populate('productId', 'title imagesUrls')
+    .sort({ createdAt: -1 })
+    .limit(10);
+
+    if (notifications.length > 0) {
+      socket.emit('pendingNotifications', {
+        notifications,
+        count: notifications.length
+      });
+    }
+
+    // Send unread count
+    const unreadCount = await Notification.getUnreadCount(userId);
+    socket.emit('unreadCountUpdate', { count: unreadCount });
+    
+  } catch (error) {
+    console.error('Error sending pending notifications:', error);
+  }
+};
+
 // Helper function to get online users
 export const getOnlineUsers = () => {
   return Array.from(connectedUsers.keys());
@@ -302,6 +393,39 @@ export const emitToUser = (io, userId, event, data) => {
     return false;
   } catch (error) {
     console.error('Error emitting to user:', error);
+    return false;
+  }
+};
+
+// Helper function to broadcast notification to user
+export const emitNotificationToUser = (io, userId, notification) => {
+  try {
+    const socketId = connectedUsers.get(userId);
+    if (socketId) {
+      io.to(socketId).emit('newNotification', {
+        id: notification._id,
+        type: notification.type,
+        title: notification.title,
+        message: notification.message,
+        data: notification.data,
+        timestamp: notification.createdAt,
+        isRead: false
+      });
+      
+      // Also update unread count
+      Notification.getUnreadCount(userId)
+        .then(count => {
+          io.to(socketId).emit('unreadCountUpdate', { count });
+        })
+        .catch(error => {
+          console.error('Error getting unread count:', error);
+        });
+      
+      return true;
+    }
+    return false;
+  } catch (error) {
+    console.error('Error emitting notification to user:', error);
     return false;
   }
 };

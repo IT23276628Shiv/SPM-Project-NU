@@ -1,5 +1,5 @@
 // frontend/src/screens/Chat/ChatListScreen.js
-import React, { useState, useEffect } from 'react';
+import React, { useState, useRef } from "react";
 import {
   View,
   Text,
@@ -8,124 +8,133 @@ import {
   Image,
   StyleSheet,
   RefreshControl,
-  Alert,
   TextInput,
   Animated,
-  Dimensions
-} from 'react-native';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
-import { Swipeable } from 'react-native-gesture-handler';
-import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import { useAuth } from '../../context/AuthContext';
-import { API_URL } from '../../constants/config';
-import Layout from '../../components/Layouts';
-
-const { width } = Dimensions.get('window');
+  StatusBar,
+  Alert
+} from "react-native";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import { useAuth } from "../../context/AuthContext";
+import { API_URL } from "../../constants/config";
+import Layout from "../../components/Layouts";
+import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
+import Swipeable from "react-native-gesture-handler/Swipeable";
 
 export default function ChatListScreen() {
   const { user } = useAuth();
   const navigation = useNavigation();
   const [conversations, setConversations] = useState([]);
-  const [filteredConversations, setFilteredConversations] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [filtered, setFiltered] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchVisible, setSearchVisible] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [activeFilter, setActiveFilter] = useState("all");
+  const swipeableRefs = useRef(new Map());
 
-  const fetchConversations = async () => {
+  const fetchConvs = async () => {
     try {
-      setLoading(true);
       const token = await user.getIdToken();
-      
-      const response = await fetch(`${API_URL}/api/messages/conversations`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+      const resp = await fetch(`${API_URL}/api/messages/conversations`, {
+        headers: { Authorization: `Bearer ${token}` }
       });
-
-      const data = await response.json();
-      
-      if (response.ok) {
-        // Group conversations by other user to prevent duplicates
-        const groupedConversations = {};
-        
-        data.conversations?.forEach(conv => {
-          const otherUserId = conv.otherUser._id;
-          
-          // If we already have a conversation with this user, keep the most recent one
-          if (!groupedConversations[otherUserId] || 
-              new Date(conv.updatedAt) > new Date(groupedConversations[otherUserId].updatedAt)) {
-            groupedConversations[otherUserId] = conv;
+      const data = await resp.json();
+      if (resp.ok) {
+        const grouped = {};
+        (data.conversations || []).forEach(conv => {
+          const otherId = conv.otherUser._id;
+          if (
+            !grouped[otherId] ||
+            new Date(conv.updatedAt) >
+              new Date(grouped[otherId].updatedAt)
+          ) {
+            grouped[otherId] = conv;
           }
         });
-
-        const uniqueConversations = Object.values(groupedConversations);
-        setConversations(uniqueConversations);
-        setFilteredConversations(uniqueConversations);
-      } else {
-        console.error('Error fetching conversations:', data.error);
+        const unique = Object.values(grouped);
+        setConversations(unique);
+        applyFilters(unique, activeFilter, searchQuery);
       }
-    } catch (error) {
-      console.error('Error fetching conversations:', error);
-    } finally {
-      setLoading(false);
+    } catch (err) {
+      console.error(err);
     }
   };
 
-  const onRefresh = React.useCallback(() => {
-    setRefreshing(true);
-    fetchConversations().finally(() => setRefreshing(false));
-  }, []);
-
-  const handleSearch = (query) => {
-    setSearchQuery(query);
-    if (query.trim() === '') {
-      setFilteredConversations(conversations);
-    } else {
-      const filtered = conversations.filter(conv =>
-        conv.otherUser.username.toLowerCase().includes(query.toLowerCase()) ||
-        (conv.product?.title || '').toLowerCase().includes(query.toLowerCase()) ||
-        (conv.lastMessage?.content || '').toLowerCase().includes(query.toLowerCase())
-      );
-      setFilteredConversations(filtered);
+  const applyFilters = (convos, filter, query) => {
+    let filteredList = convos;
+    
+    if (filter === "unread") {
+      filteredList = filteredList.filter(conv => conv.unreadCount > 0);
+    } else if (filter === "groups") {
+      filteredList = filteredList.filter(conv => conv.isGroupChat);
     }
+    
+    if (query.trim()) {
+      const lower = query.toLowerCase();
+      filteredList = filteredList.filter(conv => {
+        return (
+          conv.otherUser.username.toLowerCase().includes(lower) ||
+          (conv.product?.title || "").toLowerCase().includes(lower) ||
+          (conv.lastMessage?.content || "").toLowerCase().includes(lower)
+        );
+      });
+    }
+    
+    setFiltered(filteredList);
   };
 
   useFocusEffect(
     React.useCallback(() => {
-      fetchConversations();
+      fetchConvs();
+      return () => {
+        // Close any open swipeables when leaving screen
+        swipeableRefs.current.forEach(ref => {
+          ref?.close();
+        });
+      };
     }, [])
   );
 
-  const formatLastMessageTime = (date) => {
-    const messageDate = new Date(date);
-    const now = new Date();
-    const diffInHours = (now - messageDate) / (1000 * 60 * 60);
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchConvs().finally(() => setRefreshing(false));
+  };
 
-    if (diffInHours < 24) {
-      return messageDate.toLocaleTimeString('en-US', { 
-        hour: '2-digit', 
-        minute: '2-digit' 
-      });
-    } else if (diffInHours < 48) {
-      return 'Yesterday';
+  const handleSearch = (q) => {
+    setSearchQuery(q);
+    applyFilters(conversations, activeFilter, q);
+  };
+
+  const handleFilterChange = (filter) => {
+    setActiveFilter(filter);
+    applyFilters(conversations, filter, searchQuery);
+  };
+
+  const formatTime = (d) => {
+    if (!d) return "";
+    const dt = new Date(d);
+    const now = new Date();
+    const diffH = (now - dt) / (1000 * 60 * 60);
+    
+    if (diffH < 1) {
+      const diffM = Math.floor(diffH * 60);
+      return diffM < 1 ? "now" : `${diffM}m`;
+    } else if (diffH < 24) {
+      return `${Math.floor(diffH)}h`;
+    } else if (diffH < 48) {
+      return "yesterday";
     } else {
-      return messageDate.toLocaleDateString('en-US', { 
-        month: 'short', 
-        day: 'numeric' 
-      });
+      return dt.toLocaleDateString("en-US", { month: "short", day: "numeric" });
     }
   };
 
-  const handleDeleteConversation = (conversationId) => {
+  const handleDelete = (conversationId) => {
     Alert.alert(
-      'Delete Conversation',
-      'Are you sure you want to delete this conversation? This action cannot be undone.',
+      "Delete Conversation",
+      "Are you sure you want to delete this conversation?",
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: "Cancel", style: "cancel" },
         { 
-          text: 'Delete', 
-          style: 'destructive',
+          text: "Delete", 
+          style: "destructive",
           onPress: () => deleteConversation(conversationId)
         }
       ]
@@ -135,210 +144,242 @@ export default function ChatListScreen() {
   const deleteConversation = async (conversationId) => {
     try {
       const token = await user.getIdToken();
-      
-      const response = await fetch(`${API_URL}/api/messages/conversations/${conversationId}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+      const resp = await fetch(`${API_URL}/api/messages/conversations/${conversationId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` }
       });
-
-      if (response.ok) {
-        const updatedConversations = conversations.filter(conv => conv._id !== conversationId);
-        setConversations(updatedConversations);
-        setFilteredConversations(updatedConversations);
-      } else {
-        const data = await response.json();
-        Alert.alert('Error', data.error || 'Failed to delete conversation');
+      
+      if (resp.ok) {
+        // Remove from local state
+        const updated = conversations.filter(conv => conv._id !== conversationId);
+        setConversations(updated);
+        applyFilters(updated, activeFilter, searchQuery);
       }
-    } catch (error) {
-      console.error('Error deleting conversation:', error);
-      Alert.alert('Error', 'Failed to delete conversation');
+    } catch (err) {
+      console.error("Failed to delete conversation:", err);
+      Alert.alert("Error", "Failed to delete conversation");
     }
   };
 
-  const renderRightActions = (conversationId) => {
+  const handleArchive = (conversationId) => {
+    // Implement archive functionality here
+    Alert.alert("Archived", "Conversation archived");
+  };
+
+  const renderRightActions = (progress, dragX, item) => {
+    const scale = dragX.interpolate({
+      inputRange: [-100, 0],
+      outputRange: [1, 0],
+      extrapolate: 'clamp',
+    });
+
     return (
-      <View style={styles.rightActions}>
-        <TouchableOpacity
-          style={styles.deleteAction}
-          onPress={() => handleDeleteConversation(conversationId)}
+      <View style={styles.swipeActions}>
+        <TouchableOpacity 
+          style={[styles.swipeAction, styles.archiveAction]}
+          onPress={() => {
+            swipeableRefs.current.get(item._id)?.close();
+            handleArchive(item._id);
+          }}
         >
-          <MaterialCommunityIcons name="delete" size={24} color="#fff" />
-          <Text style={styles.actionText}>Delete</Text>
+          <Animated.View style={{ transform: [{ scale }] }}>
+            <MaterialCommunityIcons name="archive" size={24} color="#FFFFFF" />
+          </Animated.View>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={[styles.swipeAction, styles.deleteAction]}
+          onPress={() => {
+            swipeableRefs.current.get(item._id)?.close();
+            handleDelete(item._id);
+          }}
+        >
+          <Animated.View style={{ transform: [{ scale }] }}>
+            <MaterialCommunityIcons name="delete" size={24} color="#FFFFFF" />
+          </Animated.View>
         </TouchableOpacity>
       </View>
     );
   };
 
-  const renderConversationItem = ({ item }) => {
-    const lastMessagePreview = () => {
-      if (!item.lastMessage) return 'No messages yet';
-      
-      switch (item.lastMessage.messageType) {
-        case 'image':
-          return '📷 Image';
-        case 'product':
-          return '🛍️ Shared a product';
-        case 'call':
-          return '📞 Call';
-        default:
-          return item.lastMessage.content || 'Message';
-      }
+  const renderItem = ({ item }) => {
+    const preview = () => {
+      if (!item.lastMessage) return "Start a conversation";
+      const type = item.lastMessage.messageType;
+      if (type === "image") return "📷 Photo";
+      if (type === "product") return "🛍️ Product shared";
+      if (type === "call") return "📞 Voice call";
+      return item.lastMessage.content?.substring(0, 40) + (item.lastMessage.content?.length > 40 ? "..." : "") || "New message";
     };
 
+    const isUnread = item.unreadCount > 0;
+
     return (
-      <Swipeable renderRightActions={() => renderRightActions(item._id)}>
+      <Swipeable
+        ref={ref => {
+          if (ref) {
+            swipeableRefs.current.set(item._id, ref);
+          } else {
+            swipeableRefs.current.delete(item._id);
+          }
+        }}
+        renderRightActions={(progress, dragX) => renderRightActions(progress, dragX, item)}
+        rightThreshold={40}
+        friction={2}
+        overshootFriction={8}
+      >
         <TouchableOpacity
-          style={styles.conversationItem}
-          onPress={() => navigation.navigate('Chat', { 
-            conversation: item,
-            otherUser: item.otherUser 
-          })}
+          style={[styles.card, isUnread && styles.unreadCard]}
+          onPress={() =>
+            navigation.navigate("Chat", { conversation: item, otherUser: item.otherUser })
+          }
+          activeOpacity={0.7}
         >
-          <View style={styles.conversationContent}>
-            {/* Profile Picture */}
-            <View style={styles.profileSection}>
-              {item.otherUser.profilePictureUrl ? (
-                <Image 
-                  source={{ uri: item.otherUser.profilePictureUrl }} 
-                  style={styles.profilePicture} 
-                />
-              ) : (
-                <View style={styles.defaultProfile}>
-                  <Text style={styles.defaultProfileText}>
-                    {item.otherUser.username?.charAt(0).toUpperCase()}
-                  </Text>
-                </View>
-              )}
-              
-              {item.unreadCount > 0 && (
-                <View style={styles.unreadBadge}>
-                  <Text style={styles.unreadText}>
-                    {item.unreadCount > 99 ? '99+' : item.unreadCount}
-                  </Text>
-                </View>
-              )}
-            </View>
-
-            {/* Chat Info */}
-            <View style={styles.chatInfo}>
-              <View style={styles.chatHeader}>
-                <Text style={styles.username}>{item.otherUser.username}</Text>
-                {item.lastMessage && (
-                  <Text style={styles.timestamp}>
-                    {formatLastMessageTime(item.lastMessage.sentDate)}
-                  </Text>
-                )}
+          <View style={styles.avatarContainer}>
+            {item.otherUser.profilePictureUrl ? (
+              <Image
+                source={{ uri: item.otherUser.profilePictureUrl }}
+                style={styles.avatar}
+              />
+            ) : (
+              <View style={styles.placeholderAvatar}>
+                <Text style={styles.placeholderInitial}>
+                  {item.otherUser.username?.charAt(0).toUpperCase()}
+                </Text>
               </View>
-
-              {/* Product Info if available */}
-              {item.product && (
-                <Text style={styles.productInfo}>
-                  About: {item.product.title}
+            )}
+            {isUnread && <View style={styles.unreadBadge} />}
+          </View>
+          
+          <View style={styles.content}>
+            <View style={styles.headerRow}>
+              <Text style={[styles.username, isUnread && styles.unreadText]} numberOfLines={1}>
+                {item.otherUser.username}
+              </Text>
+              {item.lastMessage && (
+                <Text style={[styles.time, isUnread && styles.unreadTime]}>
+                  {formatTime(item.lastMessage.sentDate)}
                 </Text>
               )}
-
-              {/* Last Message */}
+            </View>
+            
+            {item.product && (
+              <Text style={styles.aboutText} numberOfLines={1}>
+                💬 About: {item.product.title}
+              </Text>
+            )}
+            
+            <View style={styles.messageRow}>
               <Text 
-                style={[
-                  styles.lastMessage, 
-                  item.unreadCount > 0 && styles.unreadMessage
-                ]}
+                style={[styles.messageText, isUnread && styles.unreadText]} 
                 numberOfLines={1}
               >
-                {lastMessagePreview()}
+                {preview()}
               </Text>
+              {item.lastMessage?.messageType === "image" && (
+                <MaterialCommunityIcons name="image" size={16} color="#8E8E93" />
+              )}
             </View>
-
-            {/* Product Thumbnail */}
-            {item.product && item.product.imagesUrls?.[0] && (
-              <Image 
-                source={{ uri: item.product.imagesUrls[0] }} 
-                style={styles.productThumbnail} 
-              />
-            )}
           </View>
+
+          {item.product?.imagesUrls?.[0] && (
+            <Image
+              source={{ uri: item.product.imagesUrls[0] }}
+              style={styles.productThumb}
+            />
+          )}
+
+          <MaterialCommunityIcons 
+            name="chevron-right" 
+            size={20} 
+            color="#C7C7CC" 
+            style={styles.chevron}
+          />
         </TouchableOpacity>
       </Swipeable>
     );
   };
 
-  if (loading && conversations.length === 0) {
-    return (
-      <Layout>
-        <View style={styles.centerContainer}>
-          <Text>Loading conversations...</Text>
-        </View>
-      </Layout>
-    );
-  }
+  const FilterButton = ({ label, filter, icon }) => (
+    <TouchableOpacity
+      style={[styles.filterBtn, activeFilter === filter && styles.filterBtnActive]}
+      onPress={() => handleFilterChange(filter)}
+    >
+      <MaterialCommunityIcons 
+        name={icon} 
+        size={16} 
+        color={activeFilter === filter ? "#FFFFFF" : "#2F6F61"} 
+      />
+      <Text style={[styles.filterText, activeFilter === filter && styles.filterTextActive]}>
+        {label}
+      </Text>
+    </TouchableOpacity>
+  );
 
   return (
     <Layout>
+      <StatusBar barStyle="dark-content" backgroundColor="#F5F7F6" />
       <View style={styles.container}>
-        {/* Header with search */}
         <View style={styles.header}>
-          <View style={styles.headerTop}>
-            <Text style={styles.title}>Messages</Text>
-            <TouchableOpacity
-              onPress={() => setSearchVisible(!searchVisible)}
-              style={styles.searchButton}
-            >
-              <MaterialCommunityIcons name="magnify" size={24} color="#2f95dc" />
-            </TouchableOpacity>
-          </View>
-          
-          {searchVisible && (
-            <View style={styles.searchContainer}>
-              <MaterialCommunityIcons name="magnify" size={20} color="#666" style={styles.searchIcon} />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search conversations..."
-                value={searchQuery}
-                onChangeText={handleSearch}
-                autoFocus={searchVisible}
-              />
-              {searchQuery.length > 0 && (
-                <TouchableOpacity
-                  onPress={() => handleSearch('')}
-                  style={styles.clearButton}
-                >
-                  <MaterialCommunityIcons name="close" size={20} color="#666" />
-                </TouchableOpacity>
-              )}
-            </View>
-          )}
+          <Text style={styles.pageTitle}>Messages</Text>
+          <Text style={styles.subtitle}>Connect with buyers & sellers</Text>
         </View>
-        
-        {filteredConversations.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            {searchQuery ? (
-              <>
-                <Text style={styles.emptyText}>No conversations found</Text>
-                <Text style={styles.emptySubText}>
-                  Try searching with different keywords
-                </Text>
-              </>
-            ) : (
-              <>
-                <Text style={styles.emptyText}>No conversations yet</Text>
-                <Text style={styles.emptySubText}>
-                  Start chatting with sellers from product details
-                </Text>
-              </>
+
+        <View style={styles.searchSection}>
+          <View style={styles.searchBox}>
+            <MaterialCommunityIcons name="magnify" size={20} color="#8E8E93" />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search conversations..."
+              placeholderTextColor="#8E8E93"
+              value={searchQuery}
+              onChangeText={handleSearch}
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => handleSearch("")}>
+                <MaterialCommunityIcons name="close-circle" size={18} color="#8E8E93" />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          <View style={styles.filterContainer}>
+            <FilterButton label="All" filter="all" icon="message-text" />
+            <FilterButton label="Unread" filter="unread" icon="message-badge" />
+            <FilterButton label="Groups" filter="groups" icon="account-group" />
+          </View>
+        </View>
+
+        {filtered.length === 0 ? (
+          <View style={styles.emptyState}>
+            <MaterialCommunityIcons name="message-outline" size={80} color="#E0E6E3" />
+            <Text style={styles.emptyTitle}>
+              {searchQuery || activeFilter !== "all" ? "No matches found" : "No conversations yet"}
+            </Text>
+            <Text style={styles.emptySubtitle}>
+              {searchQuery || activeFilter !== "all" 
+                ? "Try adjusting your search or filter" 
+                : "Start chatting by messaging sellers from product pages"}
+            </Text>
+            {(searchQuery || activeFilter !== "all") && (
+              <TouchableOpacity 
+                style={styles.resetButton}
+                onPress={() => {
+                  setSearchQuery("");
+                  setActiveFilter("all");
+                }}
+              >
+                <Text style={styles.resetButtonText}>Show all conversations</Text>
+              </TouchableOpacity>
             )}
           </View>
         ) : (
           <FlatList
-            data={filteredConversations}
-            keyExtractor={(item) => item._id}
-            renderItem={renderConversationItem}
-            refreshControl={
-              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-            }
+            data={filtered}
+            keyExtractor={(i) => i._id}
+            renderItem={renderItem}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+            contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.listContainer}
           />
         )}
       </View>
@@ -349,191 +390,248 @@ export default function ChatListScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: "#F5F7F6",
+    marginHorizontal:-14,
+    marginVertical:-12,
+    borderTopLeftRadius:12,
+    borderTopRightRadius:12,
   },
   header: {
-    backgroundColor: '#fff',
+    paddingHorizontal: 14,
     paddingTop: 16,
-    paddingHorizontal: 16,
     paddingBottom: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
   },
-  headerTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
+  pageTitle: {
+    fontSize: 32,
+    fontWeight: "800",
+    color: "#1A1A1C",
+    letterSpacing: -0.5,
   },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
+  subtitle: {
+    fontSize: 16,
+    color: "#8E8E93",
+    marginTop: 4,
   },
-  searchButton: {
-    padding: 8,
+  searchSection: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
   },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f8f9fa',
-    borderRadius: 25,
+  searchBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
     paddingHorizontal: 16,
-    paddingVertical: 8,
-    marginBottom: 8,
-  },
-  searchIcon: {
-    marginRight: 8,
+    paddingVertical: 12,
+    marginBottom: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
   },
   searchInput: {
     flex: 1,
+    marginLeft: 12,
     fontSize: 16,
-    color: '#333',
+    color: "#1A1A1C",
+    fontWeight: "500",
   },
-  clearButton: {
-    marginLeft: 8,
-    padding: 4,
+  filterContainer: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    marginTop: 8,
   },
-  listContainer: {
-    paddingTop: 8,
-  },
-  conversationItem: {
-    backgroundColor: '#fff',
-    marginHorizontal: 16,
-    marginBottom: 8,
-    borderRadius: 12,
+  filterBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
     elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
   },
-  conversationContent: {
-    flexDirection: 'row',
-    padding: 12,
-    alignItems: 'center',
+  filterBtnActive: {
+    backgroundColor: "#2F6F61",
   },
-  profileSection: {
-    position: 'relative',
-    marginRight: 12,
+  filterText: {
+    marginLeft: 6,
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#2F6F61",
   },
-  profilePicture: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+  filterTextActive: {
+    color: "#FFFFFF",
   },
-  defaultProfile: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#2f95dc',
-    justifyContent: 'center',
-    alignItems: 'center',
+  listContent: {
+    paddingHorizontal: 15,
+    paddingTop: 8,
+    paddingBottom: 20,
+    flexGrow: 1,
   },
-  defaultProfileText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
+  card: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 16,
+    marginVertical: 6,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 2,
+    borderLeftWidth: 4,
+    borderLeftColor: "transparent",
+  },
+  unreadCard: {
+    borderLeftColor: "#2F6F61",
+    backgroundColor: "#F8FFFD",
+    shadowOpacity: 0.08,
+  },
+  avatarContainer: {
+    position: "relative",
+    marginRight: 16,
+  },
+  avatar: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    borderWidth: 2,
+    borderColor: "#E0E6E3",
+  },
+  placeholderAvatar: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: "#2F6F61",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  placeholderInitial: {
+    color: "#FFFFFF",
+    fontSize: 22,
+    fontWeight: "700",
   },
   unreadBadge: {
-    position: 'absolute',
-    top: -5,
-    right: -5,
-    backgroundColor: '#ff6f61',
-    borderRadius: 10,
-    minWidth: 20,
-    height: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
+    position: "absolute",
+    top: -2,
+    right: -2,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: "#FF3B30",
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
   },
-  unreadText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: 'bold',
-    paddingHorizontal: 4,
-  },
-  chatInfo: {
+  content: {
     flex: 1,
-    justifyContent: 'center',
   },
-  chatHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  headerRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 4,
   },
   username: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
+    fontSize: 17,
+    fontWeight: "600",
+    color: "#1A1A1C",
+    flex: 1,
   },
-  timestamp: {
-    fontSize: 12,
-    color: '#666',
+  unreadText: {
+    fontWeight: "700",
+    color: "#1A1A1C",
   },
-  productInfo: {
-    fontSize: 12,
-    color: '#2f95dc',
-    marginBottom: 4,
-    fontStyle: 'italic',
+  time: {
+    fontSize: 13,
+    color: "#8E8E93",
+    fontWeight: "500",
   },
-  lastMessage: {
+  unreadTime: {
+    color: "#2F6F61",
+    fontWeight: "600",
+  },
+  aboutText: {
     fontSize: 14,
-    color: '#666',
+    color: "#2F6F61",
+    fontWeight: "500",
+    marginBottom: 2,
   },
-  unreadMessage: {
-    fontWeight: '600',
-    color: '#333',
+  messageRow: {
+    flexDirection: "row",
+    alignItems: "center",
   },
-  productThumbnail: {
-    width: 40,
-    height: 40,
-    borderRadius: 8,
+  messageText: {
+    fontSize: 15,
+    color: "#8E8E93",
+    flex: 1,
+    marginRight: 8,
+  },
+  productThumb: {
+    width: 50,
+    height: 50,
+    borderRadius: 10,
+    marginLeft: 12,
+    borderWidth: 1,
+    borderColor: "#F0F0F0",
+  },
+  chevron: {
     marginLeft: 8,
   },
-  rightActions: {
-    width: 80,
-    backgroundColor: '#ff4757',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-    marginRight: 16,
-    borderTopRightRadius: 12,
-    borderBottomRightRadius: 12,
-  },
-  deleteAction: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    height: '100%',
-    width: '100%',
-  },
-  actionText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
-    marginTop: 4,
-  },
-  centerContainer: {
+  emptyState: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     paddingHorizontal: 40,
   },
-  emptyText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
+  emptyTitle: {
+    fontSize: 22,
+    fontWeight: "700",
+    color: "#1A1A1C",
+    marginTop: 16,
     marginBottom: 8,
+    textAlign: "center",
   },
-  emptySubText: {
-    fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
-    lineHeight: 20,
+  emptySubtitle: {
+    fontSize: 16,
+    color: "#8E8E93",
+    textAlign: "center",
+    lineHeight: 22,
+  },
+  resetButton: {
+    marginTop: 20,
+    backgroundColor: "#2F6F61",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  resetButtonText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  // Swipe actions styles
+  swipeActions: {
+    flexDirection: "row",
+    width: 160,
+    height: "85%",
+    marginVertical: 8,
+    borderRadius: 20,
+    overflow: "hidden",
+  },
+  swipeAction: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  archiveAction: {
+    backgroundColor: "#FF9500",
+  },
+  deleteAction: {
+    backgroundColor: "#FF3B30",
   },
 });
