@@ -131,26 +131,26 @@ export default function HomeScreen() {
   };
 
 
-  // Add to cart
-const handleAddToCart = async (product) => {
+const handleAddToFavorites = async (productId) => {
+  if (!user) return Alert.alert("Error", "Login first!");
+
   try {
-    const key = `cart_${user._id}`;  // make it user-specific
-    const storedCart = await AsyncStorage.getItem(key);
-    const cartItems = storedCart ? JSON.parse(storedCart) : [];
+    const token = await user.getIdToken(true);
 
-    if (cartItems.some((item) => item._id === product._id)) {
-      Alert.alert("Info", "Product already in cart");
-      return;
-    }
+    const res = await axios.post(
+      `${API_URL}/api/favorites`,
+      { productId },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
 
-    const updatedCart = [...cartItems, product];
-    await AsyncStorage.setItem(key, JSON.stringify(updatedCart));
-
-    Alert.alert("Success", `${product.title} added to cart`);
+    Alert.alert("Success", "Added to favorites!");
   } catch (err) {
-    console.log("Error saving cart:", err);
+    console.log("Error adding to favorites:", err.response?.data || err.message);
+    Alert.alert("Error", err.response?.data?.error || "Failed to add to favorites");
   }
 };
+
+
 
   return (
     <Layout>
@@ -301,18 +301,19 @@ const handleAddToCart = async (product) => {
 
                 {/* Add to Cart */}
                 {/* Add to Cart OR Owner Label */}
-              {item.ownerId?.firebaseUid === user?.uid ? (
+                {item.ownerId?.firebaseUid === user?.uid ? (
                 <View style={styles.ownerBadge}>
-                 <Text style={styles.ownerBadgeText}>Your Product</Text>
+                  <Text style={styles.ownerBadgeText}>Your Product</Text>
                 </View>
-                ) : (
+              ) : (
                 <TouchableOpacity
-                  style={styles.addToCartBtn}
-                  onPress={() => handleAddToCart(item)}
+                  style={[styles.addToCartBtn, { backgroundColor: "#2f95dc", marginTop: 6 }]}
+                  onPress={() => handleAddToFavorites(item._id)}
                 >
-                  <Text style={styles.addToCartText}>Add to Cart</Text>
+                  <Text style={styles.addToCartText}>Add to Favorites</Text>
                 </TouchableOpacity>
               )}
+
 
               </View>
             </TouchableOpacity>
