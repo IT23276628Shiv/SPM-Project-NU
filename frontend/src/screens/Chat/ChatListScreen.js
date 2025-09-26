@@ -1,4 +1,4 @@
-// frontend/src/screens/Chat/ChatListScreen.js
+// frontend/src/screens/Chat/ChatListScreen.js - FIXED VERSION with polling
 import React, { useState, useRef } from "react";
 import {
   View,
@@ -29,8 +29,9 @@ export default function ChatListScreen() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState("all");
   const swipeableRefs = useRef(new Map());
+  const pollingInterval = useRef(null);
 
-  const fetchConvs = async () => {
+  const fetchConvs = async (silent = false) => {
     try {
       const token = await user.getIdToken();
       const resp = await fetch(`${API_URL}/api/messages/conversations`, {
@@ -50,11 +51,23 @@ export default function ChatListScreen() {
           }
         });
         const unique = Object.values(grouped);
-        setConversations(unique);
+        
+        // Only update if there are changes (prevent unnecessary re-renders)
+        setConversations(prev => {
+          if (JSON.stringify(prev) !== JSON.stringify(unique)) {
+            return unique;
+          }
+          return prev;
+        });
+        
         applyFilters(unique, activeFilter, searchQuery);
+      } else if (!silent) {
+        console.error('Error fetching conversations:', data.error);
       }
     } catch (err) {
-      console.error(err);
+      if (!silent) {
+        console.error('Fetch conversations error:', err);
+      }
     }
   };
 
@@ -81,10 +94,27 @@ export default function ChatListScreen() {
     setFiltered(filteredList);
   };
 
+  // FIXED: Add 0.5 second polling
+  const startPolling = () => {
+    pollingInterval.current = setInterval(() => {
+      fetchConvs(true); // Silent fetch
+    }, 500); // 0.5 second polling
+  };
+
+  const stopPolling = () => {
+    if (pollingInterval.current) {
+      clearInterval(pollingInterval.current);
+      pollingInterval.current = null;
+    }
+  };
+
   useFocusEffect(
     React.useCallback(() => {
       fetchConvs();
+      startPolling();
+      
       return () => {
+        stopPolling();
         // Close any open swipeables when leaving screen
         swipeableRefs.current.forEach(ref => {
           ref?.close();
@@ -93,6 +123,11 @@ export default function ChatListScreen() {
     }, [])
   );
 
+  // Update filters when conversations change
+  React.useEffect(() => {
+    applyFilters(conversations, activeFilter, searchQuery);
+  }, [conversations, activeFilter, searchQuery]);
+
   const onRefresh = () => {
     setRefreshing(true);
     fetchConvs().finally(() => setRefreshing(false));
@@ -100,12 +135,10 @@ export default function ChatListScreen() {
 
   const handleSearch = (q) => {
     setSearchQuery(q);
-    applyFilters(conversations, activeFilter, q);
   };
 
   const handleFilterChange = (filter) => {
     setActiveFilter(filter);
-    applyFilters(conversations, filter, searchQuery);
   };
 
   const formatTime = (d) => {
@@ -154,6 +187,10 @@ export default function ChatListScreen() {
         const updated = conversations.filter(conv => conv._id !== conversationId);
         setConversations(updated);
         applyFilters(updated, activeFilter, searchQuery);
+        Alert.alert("Success", "Conversation deleted successfully");
+      } else {
+        const data = await resp.json();
+        Alert.alert("Error", data.error || "Failed to delete conversation");
       }
     } catch (err) {
       console.error("Failed to delete conversation:", err);
@@ -280,6 +317,15 @@ export default function ChatListScreen() {
                 <MaterialCommunityIcons name="image" size={16} color="#8E8E93" />
               )}
             </View>
+            
+            {/* FIXED: Show unread count if greater than 0 */}
+            {isUnread && (
+              <View style={styles.unreadCountBadge}>
+                <Text style={styles.unreadCountText}>
+                  {item.unreadCount > 99 ? '99+' : item.unreadCount}
+                </Text>
+              </View>
+            )}
           </View>
 
           {item.product?.imagesUrls?.[0] && (
@@ -323,6 +369,12 @@ export default function ChatListScreen() {
         <View style={styles.header}>
           <Text style={styles.pageTitle}>Messages</Text>
           <Text style={styles.subtitle}>Connect with buyers & sellers</Text>
+          
+          {/* FIXED: Show polling indicator */}
+          <View style={styles.statusIndicator}>
+            <View style={styles.onlineIndicator} />
+            <Text style={styles.statusText}>Live updates active</Text>
+          </View>
         </View>
 
         <View style={styles.searchSection}>
@@ -347,6 +399,14 @@ export default function ChatListScreen() {
             <FilterButton label="Unread" filter="unread" icon="message-badge" />
             <FilterButton label="Groups" filter="groups" icon="account-group" />
           </View>
+        </View>
+
+        {/* FIXED: Show conversation count */}
+        <View style={styles.countContainer}>
+          <Text style={styles.countText}>
+            {filtered.length} conversation{filtered.length !== 1 ? 's' : ''}
+            {activeFilter === 'unread' && filtered.length > 0 && ' unread'}
+          </Text>
         </View>
 
         {filtered.length === 0 ? (
@@ -380,6 +440,15 @@ export default function ChatListScreen() {
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
+            removeClippedSubviews={true}
+            maxToRenderPerBatch={10}
+            windowSize={10}
+            initialNumToRender={10}
+            getItemLayout={(data, index) => ({
+              length: 90, // Approximate item height
+              offset: 90 * index,
+              index,
+            })}
           />
         )}
       </View>
@@ -411,6 +480,24 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#8E8E93",
     marginTop: 4,
+  },
+  // FIXED: Status indicator for live updates
+  statusIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  onlineIndicator: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#4CAF50',
+    marginRight: 6,
+  },
+  statusText: {
+    fontSize: 12,
+    color: '#4CAF50',
+    fontWeight: '500',
   },
   searchSection: {
     paddingHorizontal: 20,
@@ -466,6 +553,16 @@ const styles = StyleSheet.create({
   filterTextActive: {
     color: "#FFFFFF",
   },
+  // FIXED: Count container
+  countContainer: {
+    paddingHorizontal: 20,
+    paddingBottom: 8,
+  },
+  countText: {
+    fontSize: 14,
+    color: "#8E8E93",
+    fontWeight: '500',
+  },
   listContent: {
     paddingHorizontal: 15,
     paddingTop: 8,
@@ -486,6 +583,7 @@ const styles = StyleSheet.create({
     elevation: 2,
     borderLeftWidth: 4,
     borderLeftColor: "transparent",
+    minHeight: 90,
   },
   unreadCard: {
     borderLeftColor: "#2F6F61",
@@ -529,6 +627,7 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+    position: 'relative',
   },
   headerRow: {
     flexDirection: "row",
@@ -570,6 +669,24 @@ const styles = StyleSheet.create({
     color: "#8E8E93",
     flex: 1,
     marginRight: 8,
+  },
+  // FIXED: Unread count badge
+  unreadCountBadge: {
+    position: 'absolute',
+    top: -5,
+    right: 0,
+    backgroundColor: '#FF3B30',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+  },
+  unreadCountText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
   },
   productThumb: {
     width: 50,

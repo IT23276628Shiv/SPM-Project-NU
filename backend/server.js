@@ -25,7 +25,7 @@ const io = initializeSocket(server);
 
 // CORS configuration
 app.use(cors({
-  origin: ['http://localhost:5000', 'http://localhost:8081', 'http://192.168.8.156:5000','http://192.168.8.102:5000', 'http://192.168.1.230:5000','http://172.20.10.14:5000', 'https://172.16.20.210:5000'],
+  origin: ['http://localhost:5000', 'http://localhost:8081', 'http://192.168.8.156:5000','http://192.168.8.102:5000','http://192.168.8.101:5000', 'http://192.168.1.230:5000','http://172.20.10.14:5000', 'https://172.16.20.210:5000'],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],  
   exposedHeaders: ['Content-Type', 'Authorization'],

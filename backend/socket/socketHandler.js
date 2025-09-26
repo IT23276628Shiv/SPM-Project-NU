@@ -12,7 +12,7 @@ const userSockets = new Map(); // socketId -> userId (MongoDB ObjectId)
 export const initializeSocket = (server) => {
   const io = new Server(server, {
     cors: {
-      origin: ['http://localhost:5000', 'http://localhost:8081', 'http://192.168.8.156:5000', 'http://192.168.8.102:5000', 'http://192.168.1.230:5000', 'http://172.20.10.14:5000', 'https://172.16.20.210:5000', 'https://chatapp-phi.vercel.app', 'https://chatapp-phi-git-main-ankitkumarverma.vercel.app'],
+      origin: ['http://localhost:5000', 'http://localhost:8081', 'http://192.168.8.156:5000', 'http://192.168.8.102:5000','http://192.168.8.101:5000', 'http://192.168.1.230:5000', 'http://172.20.10.14:5000', 'https://172.16.20.210:5000', 'https://chatapp-phi.vercel.app', 'https://chatapp-phi-git-main-ankitkumarverma.vercel.app'],
       methods: ['GET', 'POST'],
       credentials: true
     },
