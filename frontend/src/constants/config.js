@@ -1,4 +1,4 @@
-export const API_URL = "http://192.168.8.101:5000";
+export const API_URL = "http://192.168.8.102:5000";
 
 //http://172.20.10.14:5000 niru's phone hots ip
 //http://192.168.8.156:5000 niru's wifi ip

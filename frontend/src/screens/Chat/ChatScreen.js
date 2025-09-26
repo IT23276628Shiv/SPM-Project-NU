@@ -1,4 +1,4 @@
-// frontend/src/screens/Chat/ChatScreen.js
+// frontend/src/screens/Chat/ChatScreen.js - FIXED VERSION
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -12,22 +12,24 @@ import {
   KeyboardAvoidingView,
   Platform,
   Modal,
-  Animated,
   StatusBar,
-  ActivityIndicator
+  ActivityIndicator,
+  Animated
 } from 'react-native';
+import { PanGestureHandler, State } from 'react-native-gesture-handler';
 import * as ImagePicker from 'expo-image-picker';
-import * as DocumentPicker from 'expo-document-picker';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useAuth } from '../../context/AuthContext';
 import { API_URL } from '../../constants/config';
+import io from 'socket.io-client';
 
 export default function ChatScreen() {
   const { user } = useAuth();
   const route = useRoute();
   const navigation = useNavigation();
   const flatListRef = useRef(null);
+  const socketRef = useRef(null);
 
   const { conversation, otherUser } = route.params;
 
@@ -39,6 +41,9 @@ export default function ChatScreen() {
   const [selectedImage, setSelectedImage] = useState(null);
   const [replyTo, setReplyTo] = useState(null);
   const [isOnline, setIsOnline] = useState(true);
+  const [inquiryClosed, setInquiryClosed] = useState(false);
+  const [isTyping, setIsTyping] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState(null);
 
   // Group messages by date
   const groupMessagesByDate = (messagesArray) => {
@@ -56,23 +61,90 @@ export default function ChatScreen() {
   const [groupedMessages, setGroupedMessages] = useState({});
 
   useEffect(() => {
+    socketRef.current = io(API_URL, {
+      transports: ['websocket'],
+      auth: { token: user.getIdToken() }
+    });
+
+    socketRef.current.on('connect', () => {
+      console.log('Socket connected');
+      socketRef.current.emit('userConnect', user.uid);
+      socketRef.current.emit('joinConversation', conversation._id);
+    });
+
+    socketRef.current.on('newMessage', (message) => {
+      setMessages(prev => [...prev, { ...message, status: 'delivered' }]);
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+    });
+
+    socketRef.current.on('userTyping', ({ userId, isTyping }) => {
+      if (userId === otherUser._id) setIsTyping(isTyping);
+    });
+
+    socketRef.current.on('userOnline', ({ userId, isOnline }) => {
+      if (userId === otherUser._id) setIsOnline(isOnline);
+    });
+
+    socketRef.current.on('messageDeleted', ({ messageId }) => {
+      setMessages(prev => prev.filter(msg => msg._id !== messageId));
+    });
+
+    fetchCurrentUserId();
     fetchMessages();
     markMessagesAsRead();
     setupNavigation();
 
-    // Simulate online status
-    const interval = setInterval(() => {
-      setIsOnline(prev => !prev); // Simulate status change for demo
-    }, 30000);
-
-    return () => clearInterval(interval);
+    return () => {
+      socketRef.current.emit('leaveConversation', conversation._id);
+      socketRef.current.disconnect();
+    };
   }, []);
+
+  const fetchCurrentUserId = async () => {
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch(`${API_URL}/api/users/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setCurrentUserId(data.user._id);
+      }
+    } catch (err) {
+      console.error('Error fetching current user ID:', err);
+    }
+  };
 
   useEffect(() => {
     if (messages.length > 0) {
       setGroupedMessages(groupMessagesByDate(messages));
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
     }
   }, [messages]);
+
+  useEffect(() => {
+    if (newMessage.trim()) {
+      socketRef.current.emit('typing', {
+        conversationId: conversation._id,
+        userId: user.uid,
+        isTyping: true
+      });
+      const timer = setTimeout(() => {
+        socketRef.current.emit('typing', {
+          conversationId: conversation._id,
+          userId: user.uid,
+          isTyping: false
+        });
+      }, 2000);
+      return () => clearTimeout(timer);
+    } else {
+      socketRef.current.emit('typing', {
+        conversationId: conversation._id,
+        userId: user.uid,
+        isTyping: false
+      });
+    }
+  }, [newMessage]);
 
   const setupNavigation = () => {
     navigation.setOptions({
@@ -92,7 +164,7 @@ export default function ChatScreen() {
           <View style={styles.headerUserInfo}>
             <Text style={styles.headerUserName}>{otherUser.username}</Text>
             <Text style={styles.headerUserStatus}>
-              {isOnline ? 'Online' : 'Offline'}
+              {isTyping ? 'Typing...' : isOnline ? 'Online' : 'Offline'}
             </Text>
           </View>
         </TouchableOpacity>
@@ -177,14 +249,13 @@ export default function ChatScreen() {
 
       const data = await response.json();
       if (response.ok) {
-        setMessages(prev => [...prev, { 
-          ...data.message, 
-          status: 'sent',
-          _id: Date.now().toString() // Temporary ID for immediate display
-        }]);
+        setMessages(prev => [...prev, data.message]);
         setNewMessage('');
         setReplyTo(null);
-        
+        socketRef.current.emit('sendMessage', {
+          conversationId: conversation._id,
+          message: data.message
+        });
         setTimeout(() => {
           flatListRef.current?.scrollToEnd({ animated: true });
         }, 100);
@@ -231,38 +302,50 @@ export default function ChatScreen() {
   const uploadAndSendImage = async (uri) => {
     try {
       setSending(true);
-      
-      // Create FormData for file upload
-      const formData = new FormData();
-      formData.append('image', {
-        uri: uri,
-        type: 'image/jpeg',
-        name: 'chat-image.jpg',
-      });
-
       const token = await user.getIdToken();
-      const uploadResponse = await fetch(`${API_URL}/api/messages/upload-image`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'multipart/form-data',
-          Authorization: `Bearer ${token}`,
-        },
-        body: formData,
-      });
 
-      const uploadData = await uploadResponse.json();
-      if (uploadResponse.ok) {
-        sendMessage({
-          messageType: 'image',
-          imageUrl: uploadData.imageUrl,
-          content: '📷 Image',
-        });
-      } else {
-        throw new Error(uploadData.error || 'Upload failed');
-      }
+      // Convert image to base64 for backend processing
+      const response = await fetch(uri);
+      const blob = await response.blob();
+      
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const base64 = reader.result;
+          
+          const uploadResponse = await fetch(`${API_URL}/api/messages/upload-image`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              image: base64
+            }),
+          });
+
+          const uploadData = await uploadResponse.json();
+          
+          if (uploadResponse.ok && uploadData.imageUrl) {
+            sendMessage({
+              messageType: 'image',
+              imageUrl: uploadData.imageUrl,
+              content: '📷 Image',
+            });
+          } else {
+            throw new Error(uploadData.error || 'Upload failed');
+          }
+        } catch (uploadError) {
+          console.error('Upload error:', uploadError);
+          Alert.alert('Error', 'Failed to upload image. Please try again.');
+        }
+      };
+      reader.readAsDataURL(blob);
     } catch (err) {
-      console.error('Upload error:', err);
-      Alert.alert('Error', 'Failed to upload image. Please try again.');
+      console.error('Image processing error:', err);
+      Alert.alert('Error', 'Failed to process image.');
+    } finally {
+      setSending(false);
     }
   };
 
@@ -275,12 +358,11 @@ export default function ChatScreen() {
         {
           text: 'Call',
           onPress: () => {
-            // Simulate call - integrate with your call service
             sendMessage({
               messageType: 'call',
-              content: '📞 Voice call - 5:32',
+              content: '📞 Voice call started',
               callType: 'voice',
-              callDuration: 332,
+              callDuration: 0,
             });
           },
         },
@@ -296,23 +378,29 @@ export default function ChatScreen() {
         { text: 'View Profile', onPress: () => {} },
         { text: 'Clear Chat', onPress: clearChat, style: 'destructive' },
         { text: 'Block User', onPress: blockUser, style: 'destructive' },
-        { text: 'Close Inquiry', onPress: closeInquiry, style: 'default' },
+        ...(conversation.product && !inquiryClosed ? [{ text: 'Close Inquiry', onPress: closeInquiry, style: 'default' }] : []),
         { text: 'Cancel', style: 'cancel' },
       ]
     );
   };
 
+  // FIXED: Close inquiry functionality
   const closeInquiry = () => {
     Alert.alert(
       'Close Inquiry',
-      'Are you sure you want to close this product inquiry?',
+      'Are you sure you want to close this product inquiry? This will end the conversation about this product.',
       [
         { text: 'Cancel', style: 'cancel' },
         { 
           text: 'Close Inquiry', 
           onPress: () => {
-            // Implement close inquiry logic
+            setInquiryClosed(true);
             Alert.alert('Success', 'Inquiry closed successfully');
+            // You can also send a system message
+            sendMessage({
+              messageType: 'text',
+              content: '🔒 Product inquiry has been closed',
+            });
           }
         },
       ]
@@ -332,7 +420,7 @@ export default function ChatScreen() {
             try {
               const token = await user.getIdToken();
               const response = await fetch(
-                `${API_URL}/api/messages/conversations/${conversation._id}/clear`,
+                `${API_URL}/api/messages/conversations/${conversation._id}`,
                 {
                   method: 'DELETE',
                   headers: { Authorization: `Bearer ${token}` },
@@ -352,25 +440,41 @@ export default function ChatScreen() {
     );
   };
 
+  // FIXED: Delete message functionality
   const deleteMessage = async (messageId) => {
-    try {
-      const token = await user.getIdToken();
-      const response = await fetch(
-        `${API_URL}/api/messages/${messageId}`,
-        {
-          method: 'DELETE',
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
-      
-      if (response.ok) {
-        setMessages(prev => prev.filter(msg => msg._id !== messageId));
-      } else {
-        throw new Error('Delete failed');
-      }
-    } catch (err) {
-      Alert.alert('Error', 'Failed to delete message');
-    }
+    Alert.alert(
+      'Delete Message',
+      'Are you sure you want to delete this message?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Delete', 
+          style: 'destructive', 
+          onPress: async () => {
+            try {
+              const token = await user.getIdToken();
+              const response = await fetch(
+                `${API_URL}/api/messages/${messageId}`,
+                {
+                  method: 'DELETE',
+                  headers: { Authorization: `Bearer ${token}` },
+                }
+              );
+              
+              if (response.ok) {
+                setMessages(prev => prev.filter(msg => msg._id !== messageId));
+                Alert.alert('Success', 'Message deleted successfully');
+              } else {
+                Alert.alert('Error', 'Failed to delete message');
+              }
+            } catch (err) {
+              console.error('Delete error:', err);
+              Alert.alert('Error', 'Failed to delete message');
+            }
+          }
+        },
+      ]
+    );
   };
 
   const blockUser = () => {
@@ -428,10 +532,11 @@ export default function ChatScreen() {
     }
   };
 
+  // FIXED: Message status indicators
   const getMessageStatus = (message) => {
-    if (message.status === 'seen') return 'Seen';
-    if (message.status === 'delivered') return 'Delivered';
-    return 'Sent';
+    if (message.isRead) return '✓✓ Read';
+    if (message.isDelivered) return '✓✓ Delivered';
+    return '✓ Sent';
   };
 
   const renderDateHeader = (date) => (
@@ -440,6 +545,7 @@ export default function ChatScreen() {
     </View>
   );
 
+  // FIXED: Reply section display
   const renderReplySection = () => {
     if (!replyTo) return null;
 
@@ -447,13 +553,10 @@ export default function ChatScreen() {
       <View style={styles.replyContainer}>
         <View style={styles.replyIndicator}>
           <MaterialCommunityIcons name="reply" size={16} color="#2F6F61" />
-          <Text style={styles.replyLabel}>Replying to</Text>
+          <Text style={styles.replyLabel}>Replying to {replyTo.senderId._id === user.uid ? 'yourself' : otherUser.username}</Text>
         </View>
         <View style={styles.replyContent}>
-          <Text style={styles.replyUsername}>
-            {replyTo.senderId._id === user.uid ? 'You' : otherUser.username}
-          </Text>
-          <Text style={styles.replyText} numberOfLines={1}>
+          <Text style={styles.replyText} numberOfLines={2}>
             {replyTo.messageType === 'image' ? '📷 Photo' : replyTo.content}
           </Text>
         </View>
@@ -464,135 +567,236 @@ export default function ChatScreen() {
     );
   };
 
-  const renderMessage = ({ item }) => {
-    const isMyMessage = item.senderId._id === user.uid || item.senderId === user.uid;
+  // FIXED: Swipe to reply component
+  const SwipeToReply = ({ children, onReply, isMyMessage }) => {
+    const translateX = useRef(new Animated.Value(0)).current;
+    
+    const onGestureEvent = Animated.event(
+      [{ nativeEvent: { translationX: translateX } }],
+      { useNativeDriver: true }
+    );
+
+    const onHandlerStateChange = (event) => {
+      if (event.nativeEvent.oldState === State.ACTIVE) {
+        const { translationX } = event.nativeEvent;
+        const threshold = 80;
+        
+        if (Math.abs(translationX) > threshold) {
+          onReply();
+        }
+        
+        // Animate back to position
+        Animated.spring(translateX, {
+          toValue: 0,
+          useNativeDriver: true,
+          tension: 100,
+          friction: 8,
+        }).start();
+      }
+    };
+
+    const replyIconOpacity = translateX.interpolate({
+      inputRange: isMyMessage ? [-150, -80, 0] : [0, 80, 150],
+      outputRange: [1, 1, 0],
+      extrapolate: 'clamp',
+    });
+
+    const replyIconTranslateX = translateX.interpolate({
+      inputRange: isMyMessage ? [-150, 0] : [0, 150],
+      outputRange: isMyMessage ? [40, 100] : [-100, -40],
+      extrapolate: 'clamp',
+    });
 
     return (
-      <View style={[styles.messageContainer, isMyMessage ? styles.myMessage : styles.otherMessage]}>
-        <View style={styles.messageWrapper}>
-          {/* Reply Preview */}
-          {item.replyTo && (
-            <TouchableOpacity 
+      <View style={{ flex: 1 }}>
+        <PanGestureHandler
+          onGestureEvent={onGestureEvent}
+          onHandlerStateChange={onHandlerStateChange}
+        >
+          <Animated.View style={{ 
+            flex: 1, 
+            transform: [{ translateX }] 
+          }}>
+            {children}
+          </Animated.View>
+        </PanGestureHandler>
+        
+        <Animated.View
+          style={{
+            position: 'absolute',
+            [isMyMessage ? 'left' : 'right']: 15,
+            top: '50%',
+            transform: [
+              { translateY: -15 },
+              { translateX: replyIconTranslateX }
+            ],
+            opacity: replyIconOpacity,
+          }}
+        >
+          <View style={styles.replyIcon}>
+            <MaterialCommunityIcons name="reply" size={16} color="#FFFFFF" />
+          </View>
+        </Animated.View>
+      </View>
+    );
+  };
+
+  // FIXED: Render individual message
+  const renderMessage = ({ item }) => {
+    const isMyMessage = item.senderId._id === currentUserId;
+
+    return (
+      <SwipeToReply onReply={() => setReplyTo(item)} isMyMessage={isMyMessage}>
+        <View style={[
+          styles.messageContainer, 
+          isMyMessage ? styles.myMessage : styles.otherMessage
+        ]}>
+          <View style={styles.messageWrapper}>
+            {/* FIXED: Reply Preview */}
+            {item.replyTo && (
+              <TouchableOpacity 
+                style={[
+                  styles.replyPreview,
+                  isMyMessage ? styles.myReplyPreview : styles.otherReplyPreview
+                ]}
+                onPress={() => {
+                  const repliedIndex = messages.findIndex(m => m._id === item.replyTo._id);
+                  if (repliedIndex !== -1) {
+                    flatListRef.current?.scrollToIndex({ index: repliedIndex, animated: true });
+                  }
+                }}
+              >
+                <View style={[
+                  styles.replyPreviewBar,
+                  isMyMessage ? styles.myReplyBar : styles.otherReplyBar
+                ]} />
+                <View style={styles.replyPreviewContent}>
+                  <Text style={[
+                    styles.replyPreviewName,
+                    isMyMessage ? styles.myReplyName : styles.otherReplyName
+                  ]}>
+                    {item.replyTo.senderId._id === currentUserId ? 'You' : otherUser.username}
+                  </Text>
+                  <Text style={[
+                    styles.replyPreviewText,
+                    isMyMessage ? styles.myReplyText : styles.otherReplyText
+                  ]} numberOfLines={1}>
+                    {item.replyTo.messageType === 'image' ? '📷 Photo' : item.replyTo.content}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            )}
+            
+            {/* Message Bubble */}
+            <TouchableOpacity
               style={[
-                styles.replyPreview,
-                isMyMessage ? styles.myReplyPreview : styles.otherReplyPreview
+                styles.messageBubble,
+                isMyMessage ? styles.myMessageBubble : styles.otherMessageBubble,
               ]}
-              onPress={() => {
-                // Scroll to replied message
-                const repliedIndex = messages.findIndex(m => m._id === item.replyTo._id);
-                if (repliedIndex !== -1) {
-                  flatListRef.current?.scrollToIndex({ index: repliedIndex, animated: true });
-                }
-              }}
-            >
-              <View style={styles.replyPreviewBar} />
-              <View style={styles.replyPreviewContent}>
-                <Text style={styles.replyPreviewName}>
-                  {item.replyTo.senderId._id === user.uid ? 'You' : otherUser.username}
-                </Text>
-                <Text style={styles.replyPreviewText} numberOfLines={1}>
-                  {item.replyTo.messageType === 'image' ? '📷 Photo' : item.replyTo.content}
-                </Text>
-              </View>
-            </TouchableOpacity>
-          )}
-          
-          {/* Message Bubble */}
-          <TouchableOpacity
-            style={[
-              styles.messageBubble,
-              isMyMessage ? styles.myMessageBubble : styles.otherMessageBubble,
-            ]}
-            onLongPress={() => {
-              Alert.alert(
-                'Message Options',
-                '',
-                [
+              onLongPress={() => {
+                const options = [
                   { 
                     text: 'Reply', 
                     onPress: () => setReplyTo(item) 
                   },
-                  { 
+                ];
+
+                // Only show delete option for own messages
+                if (isMyMessage) {
+                  options.push({ 
                     text: 'Delete', 
                     style: 'destructive', 
-                    onPress: () => {
-                      Alert.alert(
-                        'Delete Message',
-                        'Are you sure?',
-                        [
-                          { text: 'Cancel', style: 'cancel' },
-                          { text: 'Delete', style: 'destructive', onPress: () => deleteMessage(item._id) }
-                        ]
-                      );
-                    }
-                  },
-                  { text: 'Cancel', style: 'cancel' },
-                ]
-              );
-            }}
-          >
-            {item.messageType === 'text' && (
-              <Text style={[styles.messageText, isMyMessage ? styles.myMessageText : styles.otherMessageText]}>
-                {item.content}
-              </Text>
-            )}
-            
-            {item.messageType === 'image' && item.imageUrl && (
-              <TouchableOpacity 
-                onPress={() => {
-                  setSelectedImage(item.imageUrl);
-                  setImageModalVisible(true);
-                }}
-              >
-                <Image source={{ uri: item.imageUrl }} style={styles.messageImage} />
-                <View style={styles.imageOverlay}>
-                  <MaterialCommunityIcons name="magnify-plus" size={20} color="white" />
-                </View>
-              </TouchableOpacity>
-            )}
-            
-            {item.messageType === 'product' && item.sharedProduct && (
-              <TouchableOpacity
-                style={styles.productMessage}
-                onPress={() => navigation.navigate('ProductDetails', {
-                  productId: item.sharedProduct.productId,
-                })}
-              >
-                <Image
-                  source={{ uri: item.sharedProduct.productImage }}
-                  style={styles.productImage}
-                />
-                <View style={styles.productInfo}>
-                  <Text style={styles.productTitle}>{item.sharedProduct.productTitle}</Text>
-                  <Text style={styles.productPrice}>LKR {item.sharedProduct.productPrice}</Text>
-                  <Text style={styles.productLabel}>Tap to view product</Text>
-                </View>
-              </TouchableOpacity>
-            )}
-            
-            {item.messageType === 'call' && (
-              <View style={styles.callMessage}>
-                <MaterialCommunityIcons
-                  name={item.callType === 'video' ? 'video' : 'phone'}
-                  size={16}
-                  color={isMyMessage ? '#fff' : '#2F6F61'}
-                />
-                <Text style={[styles.callText, isMyMessage ? styles.myMessageText : styles.otherMessageText]}>
+                    onPress: () => deleteMessage(item._id)
+                  });
+                }
+
+                options.push({ text: 'Cancel', style: 'cancel' });
+
+                Alert.alert('Message Options', '', options);
+              }}
+            >
+              {item.messageType === 'text' && (
+                <Text style={[
+                  styles.messageText, 
+                  isMyMessage ? styles.myMessageText : styles.otherMessageText
+                ]}>
                   {item.content}
                 </Text>
-              </View>
-            )}
-          </TouchableOpacity>
-          
-          {/* Message Status and Time */}
-          <View style={[styles.messageMeta, isMyMessage ? styles.myMessageMeta : styles.otherMessageMeta]}>
-            <Text style={styles.messageTime}>{formatMessageTime(item.sentDate)}</Text>
-            {isMyMessage && (
-              <Text style={styles.messageStatus}>{getMessageStatus(item)}</Text>
-            )}
+              )}
+              
+              {item.messageType === 'image' && item.imageUrl && (
+                <TouchableOpacity 
+                  onPress={() => {
+                    setSelectedImage(item.imageUrl);
+                    setImageModalVisible(true);
+                  }}
+                >
+                  <Image source={{ uri: item.imageUrl }} style={styles.messageImage} />
+                  <View style={styles.imageOverlay}>
+                    <MaterialCommunityIcons name="magnify-plus" size={20} color="white" />
+                  </View>
+                </TouchableOpacity>
+              )}
+              
+              {/* FIXED: Product inquiry navigation */}
+              {item.messageType === 'product' && item.sharedProduct && (
+                <TouchableOpacity
+                  style={styles.productMessage}
+                  onPress={() => {
+                    if (item.sharedProduct.productId) {
+                      navigation.navigate('ProductDetails', {
+                        product: {
+                          _id: item.sharedProduct.productId,
+                          title: item.sharedProduct.productTitle,
+                          price: item.sharedProduct.productPrice,
+                          imagesUrls: [item.sharedProduct.productImage],
+                        }
+                      });
+                    }
+                  }}
+                >
+                  <Image
+                    source={{ uri: item.sharedProduct.productImage }}
+                    style={styles.productImage}
+                  />
+                  <View style={styles.productInfo}>
+                    <Text style={styles.productTitle}>{item.sharedProduct.productTitle}</Text>
+                    <Text style={styles.productPrice}>LKR {item.sharedProduct.productPrice?.toLocaleString()}</Text>
+                    <Text style={styles.productLabel}>Tap to view product</Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+              
+              {item.messageType === 'call' && (
+                <View style={styles.callMessage}>
+                  <MaterialCommunityIcons
+                    name={item.callType === 'video' ? 'video' : 'phone'}
+                    size={16}
+                    color={isMyMessage ? '#fff' : '#2F6F61'}
+                  />
+                  <Text style={[
+                    styles.callText, 
+                    isMyMessage ? styles.myMessageText : styles.otherMessageText
+                  ]}>
+                    {item.content}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+            
+            {/* FIXED: Message Status and Time */}
+            <View style={[
+              styles.messageMeta, 
+              isMyMessage ? styles.myMessageMeta : styles.otherMessageMeta
+            ]}>
+              <Text style={styles.messageTime}>{formatMessageTime(item.sentDate)}</Text>
+              {isMyMessage && (
+                <Text style={styles.messageStatus}>{getMessageStatus(item)}</Text>
+              )}
+            </View>
           </View>
         </View>
-      </View>
+      </SwipeToReply>
     );
   };
 
@@ -620,10 +824,17 @@ export default function ChatScreen() {
     >
       <StatusBar barStyle="light-content" backgroundColor="#2F6F61" />
       
-      {/* Product Header with Close Option */}
-      {conversation.product && (
+      {/* FIXED: Product Header with Close Option */}
+      {conversation.product && !inquiryClosed && (
         <View style={styles.productHeader}>
-          <View style={styles.productHeaderContent}>
+          <TouchableOpacity
+            style={styles.productHeaderContent}
+            onPress={() => {
+              navigation.navigate('ProductDetails', {
+                product: conversation.product
+              });
+            }}
+          >
             <Image
               source={{ uri: conversation.product.imagesUrls?.[0] }}
               style={styles.headerProductImage}
@@ -632,7 +843,7 @@ export default function ChatScreen() {
               <Text style={styles.headerProductTitle}>{conversation.product.title}</Text>
               <Text style={styles.headerProductPrice}>LKR {conversation.product.price?.toLocaleString()}</Text>
             </View>
-          </View>
+          </TouchableOpacity>
           <View style={styles.headerActions}>
             <TouchableOpacity onPress={shareProduct} style={styles.shareButton}>
               <MaterialCommunityIcons name="share-variant" size={20} color="#2F6F61" />
@@ -844,14 +1055,18 @@ const styles = StyleSheet.create({
     color: '#2F6F61',
     fontWeight: '500',
   },
+  // FIXED: Message alignment
   messageContainer: {
     marginVertical: 4,
+    width: '100%',
   },
   myMessage: {
     alignItems: "flex-end",
+    alignSelf: 'flex-end',
   },
   otherMessage: {
     alignItems: "flex-start",
+    alignSelf: 'flex-start',
   },
   messageWrapper: {
     maxWidth: "80%",
@@ -887,6 +1102,7 @@ const styles = StyleSheet.create({
   messageMeta: {
     flexDirection: "row",
     marginTop: 2,
+    alignItems: 'center',
   },
   myMessageMeta: {
     justifyContent: "flex-end",
@@ -897,11 +1113,11 @@ const styles = StyleSheet.create({
   messageTime: {
     fontSize: 11,
     color: "#8E8E93",
+    marginRight: 4,
   },
   messageStatus: {
-    fontSize: 11,
+    fontSize: 10,
     color: "#8E8E93",
-    marginLeft: 4,
     fontStyle: 'italic',
   },
   messageImage: {
@@ -957,59 +1173,74 @@ const styles = StyleSheet.create({
   callText: {
     marginLeft: 6,
   },
+  // FIXED: Reply container styles
   replyContainer: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#F0F7F5",
-    padding: 8,
+    padding: 12,
     marginHorizontal: 12,
     marginBottom: 4,
-    borderRadius: 8,
-    borderLeftWidth: 3,
+    borderRadius: 12,
+    borderLeftWidth: 4,
     borderLeftColor: "#2F6F61",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   replyIndicator: {
     flexDirection: "row",
     alignItems: "center",
-    marginRight: 8,
+    marginRight: 12,
   },
   replyLabel: {
     fontSize: 12,
     color: "#2F6F61",
-    marginLeft: 4,
-    fontWeight: "500",
+    marginLeft: 6,
+    fontWeight: "600",
   },
   replyContent: {
     flex: 1,
-    marginRight: 8,
-  },
-  replyUsername: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#2F6F61",
-    marginBottom: 2,
+    marginRight: 12,
   },
   replyText: {
-    fontSize: 12,
-    color: "#8E8E93",
+    fontSize: 14,
+    color: "#1A1A1C",
+    fontStyle: 'italic',
   },
   replyClose: {
     padding: 4,
+    borderRadius: 15,
+    backgroundColor: 'rgba(142, 142, 147, 0.1)',
   },
+  // FIXED: Reply preview styles for proper left-to-right display
   replyPreview: {
     flexDirection: "row",
-    backgroundColor: "rgba(47,111,97,0.1)",
     borderRadius: 8,
     padding: 8,
-    marginBottom: 4,
+    marginBottom: 6,
     borderLeftWidth: 3,
+  },
+  myReplyPreview: {
+    backgroundColor: "rgba(255,255,255,0.2)",
+    borderLeftColor: "#FFFFFF",
+  },
+  otherReplyPreview: {
+    backgroundColor: "rgba(47,111,97,0.1)",
     borderLeftColor: "#2F6F61",
   },
   replyPreviewBar: {
     width: 3,
-    backgroundColor: "#2F6F61",
     borderRadius: 2,
     marginRight: 8,
+  },
+  myReplyBar: {
+    backgroundColor: "#FFFFFF",
+  },
+  otherReplyBar: {
+    backgroundColor: "#2F6F61",
   },
   replyPreviewContent: {
     flex: 1,
@@ -1017,11 +1248,21 @@ const styles = StyleSheet.create({
   replyPreviewName: {
     fontSize: 12,
     fontWeight: "600",
-    color: "#2F6F61",
     marginBottom: 2,
+  },
+  myReplyName: {
+    color: "rgba(255,255,255,0.9)",
+  },
+  otherReplyName: {
+    color: "#2F6F61",
   },
   replyPreviewText: {
     fontSize: 11,
+  },
+  myReplyText: {
+    color: "rgba(255,255,255,0.8)",
+  },
+  otherReplyText: {
     color: "#8E8E93",
   },
   inputContainer: {
@@ -1036,6 +1277,8 @@ const styles = StyleSheet.create({
     padding: 8,
     marginRight: 8,
     marginBottom: 4,
+    borderRadius: 20,
+    backgroundColor: '#F0F7F5',
   },
   textInput: {
     flex: 1,
@@ -1046,6 +1289,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
     maxHeight: 100,
     lineHeight: 20,
+    borderWidth: 1,
+    borderColor: '#E8F0EC',
   },
   sendButton: {
     width: 40,
@@ -1056,6 +1301,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginLeft: 8,
     marginBottom: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
   },
   sendButtonDisabled: {
     backgroundColor: "#C8C8C8",
@@ -1083,6 +1333,9 @@ const styles = StyleSheet.create({
     top: '50%',
     left: '50%',
     transform: [{ translateX: -20 }, { translateY: -20 }],
+    backgroundColor: 'rgba(255,255,255,0.9)',
+    borderRadius: 25,
+    padding: 15,
   },
   modalContainer: {
     flex: 1,
@@ -1107,5 +1360,19 @@ const styles = StyleSheet.create({
     padding: 8,
     backgroundColor: "rgba(0,0,0,0.5)",
     borderRadius: 20,
+  },
+  // Reply icon style for swipe gesture
+  replyIcon: {
+    backgroundColor: '#2F6F61',
+    borderRadius: 15,
+    width: 30,
+    height: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
   },
 });

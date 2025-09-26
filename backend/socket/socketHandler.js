@@ -1,17 +1,19 @@
-// backend/socket/socketHandler.js (Updated with notification support)
+// backend/socket/socketHandler.js (Updated with notification support and authentication fix)
 import { Server } from 'socket.io';
+import admin from '../config/firebase.js';
 import Message from '../models/message.js';
 import Conversation from '../models/Conversation.js';
 import Notification from '../models/Notification.js';
+import User from '../models/User.js';
 
-const connectedUsers = new Map(); // userId -> socketId
-const userSockets = new Map(); // socketId -> userId
+const connectedUsers = new Map(); // userId -> socketId (MongoDB ObjectId)
+const userSockets = new Map(); // socketId -> userId (MongoDB ObjectId)
 
 export const initializeSocket = (server) => {
   const io = new Server(server, {
     cors: {
-      origin: ['http://localhost:5000', 'http://localhost:8081', 'http://192.168.8.156:5000','http://192.168.8.101:5000', 'http://192.168.1.230:5000','http://172.20.10.14:5000', 'https:172.16.20.210:5000', 'https://chatapp-phi.vercel.app', 'https://chatapp-phi-git-main-ankitkumarverma.vercel.app'],
-      methods: ['GET', 'POST'], 
+      origin: ['http://localhost:5000', 'http://localhost:8081', 'http://192.168.8.156:5000', 'http://192.168.8.102:5000', 'http://192.168.1.230:5000', 'http://172.20.10.14:5000', 'https://172.16.20.210:5000', 'https://chatapp-phi.vercel.app', 'https://chatapp-phi-git-main-ankitkumarverma.vercel.app'],
+      methods: ['GET', 'POST'],
       credentials: true
     },
     transports: ['websocket', 'polling'],
@@ -20,22 +22,44 @@ export const initializeSocket = (server) => {
     pingInterval: 25000
   });
 
+  io.use(async (socket, next) => {
+    try {
+      const token = socket.handshake.auth.token;
+      if (!token) {
+        return next(new Error('Authentication error: Missing token'));
+      }
+
+      const decodedToken = await admin.auth().verifyIdToken(token);
+      const userDoc = await User.findOne({ firebaseUid: decodedToken.uid });
+      if (!userDoc) {
+        return next(new Error('Authentication error: User not found'));
+      }
+
+      socket.userId = userDoc._id; // Store MongoDB ObjectId
+      next();
+    } catch (error) {
+      console.error('Socket authentication error:', error.message);
+      next(new Error('Authentication error'));
+    }
+  });
+
   io.on('connection', (socket) => {
     console.log(`🔌 User connected: ${socket.id}`);
 
-    // Handle user connection with error handling
-    socket.on('userConnect', (userId) => {
+    // Handle user connection with authenticated userId
+    socket.on('userConnect', () => {
       try {
+        const userId = socket.userId; // Use authenticated MongoDB ObjectId
         if (!userId) {
           socket.emit('error', { message: 'userId is required for connection' });
           return;
         }
 
-        connectedUsers.set(userId, socket.id);
-        userSockets.set(socket.id, userId);
+        connectedUsers.set(userId.toString(), socket.id);
+        userSockets.set(socket.id, userId.toString());
         
         // Broadcast user online status
-        socket.broadcast.emit('userOnline', { userId, isOnline: true });
+        socket.broadcast.emit('userOnline', { userId: userId.toString(), isOnline: true });
         
         // Send any pending notifications
         sendPendingNotifications(socket, userId);
@@ -94,22 +118,18 @@ export const initializeSocket = (server) => {
             .populate('participants');
           
           if (conversation) {
-            // Find the other participant
             const senderId = message.senderId._id || message.senderId;
             const otherParticipant = conversation.participants.find(
               p => p._id.toString() !== senderId.toString()
             );
             
             if (otherParticipant && connectedUsers.has(otherParticipant._id.toString())) {
-              // Mark as delivered
               await Message.findByIdAndUpdate(message._id, { 
                 isDelivered: true 
               }, { new: true });
               
-              // Emit delivery confirmation to sender
               socket.emit('messageDelivered', { messageId: message._id });
               
-              // Emit notification event to recipient
               const recipientSocketId = connectedUsers.get(otherParticipant._id.toString());
               if (recipientSocketId) {
                 io.to(recipientSocketId).emit('newNotification', {
@@ -123,7 +143,6 @@ export const initializeSocket = (server) => {
           }
         } catch (dbError) {
           console.error('Database error in sendMessage:', dbError);
-          // Don't fail the entire operation for delivery status
         }
         
       } catch (error) {
@@ -155,7 +174,6 @@ export const initializeSocket = (server) => {
           return;
         }
         
-        // Update messages as read
         await Message.updateMany(
           { 
             _id: { $in: messageIds }, 
@@ -164,7 +182,6 @@ export const initializeSocket = (server) => {
           { isRead: true }
         );
         
-        // Broadcast read status to sender
         socket.to(conversationId).emit('messageRead', { messageIds, readBy: userId });
         
       } catch (error) {
@@ -198,7 +215,6 @@ export const initializeSocket = (server) => {
             { isRead: true, readAt: new Date() }
           );
           
-          // Emit updated unread count
           const unreadCount = await Notification.getUnreadCount(userId);
           socket.emit('unreadCountUpdate', { count: unreadCount });
         }
@@ -230,7 +246,7 @@ export const initializeSocket = (server) => {
           return;
         }
         
-        const receiverSocketId = connectedUsers.get(receiverId);
+        const receiverSocketId = connectedUsers.get(receiverId.toString());
         
         if (receiverSocketId) {
           io.to(receiverSocketId).emit('incomingCall', {
@@ -239,7 +255,6 @@ export const initializeSocket = (server) => {
             conversationId
           });
           
-          // Emit notification for missed call later if not answered
           setTimeout(() => {
             if (receiverSocketId) {
               io.to(receiverSocketId).emit('newNotification', {
@@ -266,7 +281,7 @@ export const initializeSocket = (server) => {
         
         if (!conversationId || !callerId) return;
         
-        const callerSocketId = connectedUsers.get(callerId);
+        const callerSocketId = connectedUsers.get(callerId.toString());
         
         if (callerSocketId) {
           io.to(callerSocketId).emit('callResponse', { accepted, conversationId });
@@ -283,7 +298,7 @@ export const initializeSocket = (server) => {
         
         if (!conversationId || !otherUserId) return;
         
-        const otherSocketId = connectedUsers.get(otherUserId);
+        const otherSocketId = connectedUsers.get(otherUserId.toString());
         
         if (otherSocketId) {
           io.to(otherSocketId).emit('callEnded', { conversationId });
@@ -302,7 +317,6 @@ export const initializeSocket = (server) => {
           connectedUsers.delete(userId);
           userSockets.delete(socket.id);
           
-          // Broadcast user offline status
           socket.broadcast.emit('userOnline', { userId, isOnline: false });
           
           console.log(`🔌❌ User ${userId} disconnected (${reason})`);
@@ -345,9 +359,8 @@ export const initializeSocket = (server) => {
 // Helper function to send pending notifications to newly connected user
 const sendPendingNotifications = async (socket, userId) => {
   try {
-    // Get recent unread notifications
     const notifications = await Notification.find({
-      recipientId: userId,
+      recipientId: userId, // Use MongoDB ObjectId
       isRead: false,
       createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } // Last 24 hours
     })
@@ -363,7 +376,6 @@ const sendPendingNotifications = async (socket, userId) => {
       });
     }
 
-    // Send unread count
     const unreadCount = await Notification.getUnreadCount(userId);
     socket.emit('unreadCountUpdate', { count: unreadCount });
     
@@ -385,7 +397,7 @@ export const isUserOnline = (userId) => {
 // Helper function to emit to specific user
 export const emitToUser = (io, userId, event, data) => {
   try {
-    const socketId = connectedUsers.get(userId);
+    const socketId = connectedUsers.get(userId.toString());
     if (socketId) {
       io.to(socketId).emit(event, data);
       return true;
@@ -400,7 +412,7 @@ export const emitToUser = (io, userId, event, data) => {
 // Helper function to broadcast notification to user
 export const emitNotificationToUser = (io, userId, notification) => {
   try {
-    const socketId = connectedUsers.get(userId);
+    const socketId = connectedUsers.get(userId.toString());
     if (socketId) {
       io.to(socketId).emit('newNotification', {
         id: notification._id,
@@ -412,7 +424,6 @@ export const emitNotificationToUser = (io, userId, notification) => {
         isRead: false
       });
       
-      // Also update unread count
       Notification.getUnreadCount(userId)
         .then(count => {
           io.to(socketId).emit('unreadCountUpdate', { count });
