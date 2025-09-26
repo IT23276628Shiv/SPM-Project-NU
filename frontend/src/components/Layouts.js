@@ -1,6 +1,6 @@
 // Layout.js
 import React, { useState, useRef } from "react";
-import { View, StyleSheet, Dimensions, Animated } from "react-native";
+import { View, StyleSheet, Dimensions, Animated, StatusBar } from "react-native";
 import Header from "../components/Header";
 import Sidebar from "../components/Sidebar";
 
@@ -33,8 +33,16 @@ export default function Layout({ children }) {
 
   return (
     <View style={styles.container}>
+      {/* Status bar in Floof-style muted color */}
+      <StatusBar barStyle="dark-content" backgroundColor="#E8F0EC" />
+      
+      {/* Header */}
       <Header onMenuPress={toggleSidebar} />
-      {children}
+      
+      {/* Main content */}
+      <View style={styles.content}>{children}</View>
+
+      {/* Sidebar */}
       {sidebarVisible && (
         <Sidebar sidebarAnim={sidebarAnim} onClose={closeSidebar} />
       )}
@@ -45,8 +53,19 @@ export default function Layout({ children }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f8f8f8",
+    backgroundColor: "#F5F7F6", // Muted greenish tone like Floof
     paddingTop: 50,
-    paddingHorizontal: 20,
+  },
+  content: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: "#FFFFFF", // White card-style for contrast
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 5,
+    elevation: 2,
   },
 });
