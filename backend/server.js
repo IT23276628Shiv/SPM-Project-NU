@@ -13,6 +13,7 @@ import categoriesRouter from './routes/category.js';
 import messageRoutes from './routes/message.js';
 import notificationRoutes from './routes/notifications.js';
 import favoritesRoute from './routes/favorite.js';
+import feedbackRoutes from './routes/feedback.js';
 
 import { initializeSocket } from './socket/socketHandler.js';
 import { triggerMessageNotification, trackProductView } from './middleware/notificationTrigger.js';
@@ -31,7 +32,7 @@ app.use(cors({
   origin: [
     'http://localhost:5000',
     'http://localhost:8081',
-    'http://192.168.8.156:5000',
+    'http://172.16.20.64:5000',
     'http://192.168.8.102:5000',
     'http://192.168.8.101:5000',
     'http://192.168.1.230:5000',
@@ -71,6 +72,7 @@ app.use('/api/categories', categoriesRouter);
 app.use('/api/messages', triggerMessageNotification, messageRoutes); // trigger notifications
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/favorites', favoritesRoute);
+app.use('/api/feedback', feedbackRoutes);
 
 // 404 handler
 app.use((req, res) => {

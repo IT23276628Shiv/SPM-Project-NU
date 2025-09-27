@@ -115,6 +115,14 @@ export default function Sidebar({ sidebarAnim, onClose }) {
           label="Settings"
           onPress={() => navigation.navigate("Settings")}
         />
+       <SidebarItem
+          icon="message-text"
+          label="Feedback"
+          onPress={() => {
+            navigation.navigate("Feedback");
+            onClose();
+          }}
+        />
         <SidebarItem
           icon="logout"
           label="Logout"

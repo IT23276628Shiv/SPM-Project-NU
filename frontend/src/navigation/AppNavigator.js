@@ -30,6 +30,8 @@ import ChatScreen from "../screens/Chat/ChatScreen";
 import SellerDashboardScreen from "../screens/Seller/SellerDashboardScreen.js";
 import AllNotificationsScreen from "../screens/Notifications/AllNotificationsScreen";
 import NotificationSettingsScreen from "../screens/Notifications/NotificationSettingsScreen";
+import FeedbackScreen from "../screens/Feedback/FeedbackScreen";
+
 
 const Stack = createNativeStackNavigator();
 const Tabs = createBottomTabNavigator();
@@ -123,6 +125,7 @@ export default function AppNavigator() {
 
       {/* Cart */}
       <Stack.Screen name="Cart" component={CartScreen} options={defaultHeader("My Cart")} />
+      
 
       {/* Chat */}
       <Stack.Screen
@@ -151,6 +154,16 @@ export default function AppNavigator() {
         component={NotificationSettingsScreen}
         options={{ headerShown: false, presentation: "modal" }}
       />
+      <Stack.Screen 
+        name="Feedback" 
+        component={FeedbackScreen}
+        options={{
+          headerShown: true,
+          title: 'Feedback',
+          headerStyle: { backgroundColor: '#2F6F61' },
+          headerTintColor: '#fff',
+          headerTitleStyle: { fontWeight: 'bold' },
+        }}/>
     </Stack.Navigator>
   );
 }
