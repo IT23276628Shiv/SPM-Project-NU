@@ -13,21 +13,28 @@ const router = Router();
 router.post('/login', async (req, res) => {
   try {
     const { firebaseUid } = req.body;
+    
+    console.log('Admin login attempt with Firebase UID:', firebaseUid);
 
     if (!firebaseUid) {
+      console.log('❌ Missing Firebase UID');
       return res.status(400).json({ error: 'Firebase UID required' });
     }
 
     // Check if admin exists with this Firebase UID
     const adminUser = await Admin.findOne({ firebaseUid, isActive: true });
+    console.log('Found admin:', adminUser ? 'YES' : 'NO');
 
     if (!adminUser) {
+      console.log('❌ Admin not found or inactive');
       return res.status(401).json({ error: 'Admin access denied' });
     }
 
     // Update last login
     adminUser.lastLoginDate = new Date();
     await adminUser.save();
+    
+    console.log('✅ Admin login successful');
 
     res.json({
       message: 'Admin login successful',

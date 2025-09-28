@@ -1,4 +1,3 @@
-// frontend/src/context/AdminContext.js
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import authfirebase from '../../services/firebaseAuth';
@@ -13,10 +12,15 @@ export const AdminProvider = ({ children }) => {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(authfirebase, async (firebaseUser) => {
+      console.log('Firebase auth state changed:', firebaseUser?.email);
+      
       if (firebaseUser) {
         try {
-          // Try to authenticate as admin
+          // Get Firebase ID token
           const token = await firebaseUser.getIdToken();
+          console.log('Got Firebase token for admin check');
+          
+          // Try to authenticate as admin
           const res = await fetch(`${API_URL}/api/admin/login`, {
             method: 'POST',
             headers: {
@@ -26,20 +30,24 @@ export const AdminProvider = ({ children }) => {
           });
 
           const data = await res.json();
+          console.log('Admin login response:', { status: res.status, data });
           
-          if (res.ok) {
+          if (res.ok && data.admin) {
+            console.log('✅ Admin authenticated successfully');
             setAdmin(firebaseUser);
             setAdminDetails(data.admin);
           } else {
+            console.log('❌ Not an admin user:', data.error);
             setAdmin(null);
             setAdminDetails(null);
           }
         } catch (err) {
-          console.log("Admin authentication error:", err);
+          console.error("Admin authentication error:", err);
           setAdmin(null);
           setAdminDetails(null);
         }
       } else {
+        console.log('No Firebase user');
         setAdmin(null);
         setAdminDetails(null);
       }
@@ -67,4 +75,3 @@ export const AdminProvider = ({ children }) => {
 };
 
 export const useAdmin = () => useContext(AdminContext);
-

@@ -1,6 +1,5 @@
 import admin from "../config/firebase.js";
 import User from "../models/User.js";
-import Admin from "../models/Admin.js";
 
 export async function authMiddleware(req, res, next) {
   try {
@@ -12,22 +11,18 @@ export async function authMiddleware(req, res, next) {
     // Verify Firebase ID token
     const decodedToken = await admin.auth().verifyIdToken(token);
 
-    // First check in User model
-    let userDoc = await User.findOne({ firebaseUid: decodedToken.uid });
-
-    // If not a user, check in Admin model
+    // Find user in MongoDB by firebaseUid
+    const userDoc = await User.findOne({ firebaseUid: decodedToken.uid });
+    
     if (!userDoc) {
-      userDoc = await Admin.findOne({ firebaseUid: decodedToken.uid });
-      if (!userDoc) {
-        return res.status(401).json({ error: "User not found" });
-      }
-      req.isAdmin = true;   // ✅ mark as admin
-    } else {
-      req.isAdmin = false;  // ✅ mark as user
+      return res.status(401).json({ error: "User not found" });
     }
 
+    // Attach user info to request
     req.userId = userDoc._id;
     req.userEmail = userDoc.email;
+    req.userRole = userDoc.role; // Add role to request
+    req.isAdmin = userDoc.role === 'admin' || userDoc.role === 'super_admin';
 
     next();
   } catch (error) {
