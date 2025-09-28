@@ -59,6 +59,8 @@ router.get("/", async (req, res) => {
       ownerName: p.ownerId?.username || "Unknown",
       ownerContact: p.ownerId?.phoneNumber || "Unknown",
       categoryName: p.categoryId?.name || "Unknown",
+      buyRequests: p.buyRequests || [],   // ✅ include buy requests
+      swapRequests: p.swapRequests || [], // optional: include swaps too
     }));
 
     res.json(result);
@@ -249,6 +251,55 @@ router.delete("/:id", authMiddleware, async (req, res) => {
   }
 });
 
+// Create buy request
+router.post("/:id/buy", authMiddleware, async (req, res) => {
+  try {
+    const product = await Product.findById(req.params.id);
+    if (!product) return res.status(404).json({ error: "Product not found" });
+
+    // Check if user already requested
+    const alreadyRequested = product.buyRequests.some(
+      r => r.buyerId.toString() === req.userId
+    );
+    console.log("Already requested:", alreadyRequested);
+
+    if (alreadyRequested) {
+      return res.status(400).json({ error: "You have already sent a buy request" });
+    }
+
+    // Push new request
+    product.buyRequests.push({ buyerId: req.userId, status: "pending" });
+    const savedProduct = await product.save();
+
+    console.log("Buy request saved:", savedProduct.buyRequests);
+
+    res.json({ success: true, product: savedProduct });
+  } catch (err) {
+    console.error("Buy request error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// Get single product by ID
+router.get("/:id", async (req, res) => {
+  try {
+    const product = await Product.findById(req.params.id)
+      .populate("ownerId", "username phoneNumber firebaseUid")
+      .populate("categoryId", "name");
+
+    if (!product) return res.status(404).json({ error: "Product not found" });
+
+    res.json({
+      ...product.toObject(),
+      ownerName: product.ownerId?.username || "Unknown",
+      ownerContact: product.ownerId?.phoneNumber || "Unknown",
+      categoryName: product.categoryId?.name || "Unknown",
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch product" });
+  }
+});
 
 
 

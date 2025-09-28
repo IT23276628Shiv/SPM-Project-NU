@@ -1,10 +1,5 @@
-import React, { useEffect, useState } from "react";
-import { Alert } from "react-native";
-import { useNavigation } from '@react-navigation/native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { signOut } from "firebase/auth";
-import authfirebase from '../../services/firebaseAuth';
-import { useAuth } from '../context/AuthContext';
+// Sidebar.js (Unified with theme style + working logic)
+import React from "react";
 import {
   View,
   Text,
@@ -13,47 +8,46 @@ import {
   StyleSheet,
   Dimensions,
   Image,
+  Alert,
 } from "react-native";
 import MaterialIcons from "react-native-vector-icons/MaterialIcons";
+import { useNavigation } from "@react-navigation/native";
+import { signOut as firebaseSignOut } from "firebase/auth";
+import authfirebase from "../../services/firebaseAuth";
+import { useAuth } from "../context/AuthContext";
 
 const { width, height } = Dimensions.get("window");
 
 export default function Sidebar({ sidebarAnim, onClose }) {
-//   const [user, setUser] = useState({ username: "Guest", email: "guest@example.com", profile: null });
   const navigation = useNavigation();
+  const { user, userDetails, signOut } = useAuth();
 
-  const { user, signOut, userDetails } = useAuth();
+  const logout = async () => {
+    try {
+      await firebaseSignOut(authfirebase);
+      console.log("User logged out successfully");
+      // You can also clear context/local storage if needed
+      if (signOut) signOut();
+    } catch (error) {
+      console.log("Logout error:", error);
+    }
+  };
 
-  
-
-  const logout = async (navigation) => {
-  try {
-    await signOut(authfirebase);  // wait for logout to complete
-    console.log("User logged out successfully");
-    // navigation.navigate("Login"); // navigate to Login screen
-  } catch (error) {
-    console.log("Logout error:", error);
-  }
-};
-
-
-  // Confirm logout alert
   const confirmLogout = () => {
-    Alert.alert(
-      "Confirm Logout",
-      "Are you sure you want to log out?",
-      [
-        { text: "Cancel", style: "cancel" },
-        { text: "Logout", style: "destructive", onPress: logout },
-      ],
-      { cancelable: true }
-    );
+    Alert.alert("Confirm Logout", "Are you sure you want to log out?", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Logout", style: "destructive", onPress: logout },
+    ]);
   };
 
   return (
     <>
       {/* Backdrop */}
-      <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
+      <TouchableOpacity
+        style={styles.backdrop}
+        activeOpacity={1}
+        onPress={onClose}
+      />
 
       {/* Sidebar */}
       <Animated.View
@@ -69,57 +63,95 @@ export default function Sidebar({ sidebarAnim, onClose }) {
         <View style={styles.userInfo}>
           <Image
             source={
-              user.profile
+              user?.profile
                 ? { uri: user.profile }
                 : require("../../assets/Profile.png")
             }
             style={styles.profileImage}
           />
           <View style={styles.userDetails}>
-            <Text style={styles.username}>{userDetails.username}</Text>
-            <Text style={styles.email}>{user.email}</Text>
+            <Text style={styles.username}>
+              {userDetails?.username || user?.username || "Guest User"}
+            </Text>
+            <Text style={styles.email}>
+              {user?.email || "guest@example.com"}
+            </Text>
           </View>
         </View>
 
         {/* Menu Items */}
-        <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate("Home")}>
-          <MaterialIcons name="home" size={22} color="#2f95dc" style={styles.icon} />
-          <Text style={[styles.sidebarText, { color: "#2f95dc" }]}>Home</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate("Profile")} >
-          <MaterialIcons name="person" size={22} color="#2f95dc" style={styles.icon} onPress={() => navigation.navigate("Profile")} />
-          <Text style={[styles.sidebarText, { color: "#2f95dc" }]}>Profile</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.sidebarItem} onPress={() => alert("My Orders")}>
-          <MaterialIcons name="shopping-cart" size={22} color="#2f95dc" style={styles.icon} />
-          <Text style={[styles.sidebarText, { color: "#2f95dc" }]}>My Orders</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate("Cart")}>
-          <MaterialIcons name="shopping-cart" size={22} color="#2f95dc" style={styles.icon} />
-          <Text style={[styles.sidebarText, { color: "#2f95dc" }]}>My Cart</Text>
-        </TouchableOpacity>
-
-
-        <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate("MyActivity")}>
-          <MaterialIcons name="history" size={22} color="#2f95dc" style={styles.icon} />
-          <Text style={[styles.sidebarText, { color: "#2f95dc" }]}>My Activity</Text>
-        </TouchableOpacity>
-
-
-        <TouchableOpacity style={styles.sidebarItem} onPress={() => alert("Settings")}>
-          <MaterialIcons name="settings" size={22} color="#2f95dc" style={styles.icon} />
-          <Text style={[styles.sidebarText, { color: "#2f95dc" }]}>Settings</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.sidebarItem} onPress={confirmLogout}>
-          <MaterialIcons name="logout" size={22} color="#2f95dc" style={styles.icon} />
-          <Text style={[styles.sidebarText, { color: "#2f95dc", fontWeight: "700" }]}>Logout</Text>
-        </TouchableOpacity>
+        <SidebarItem
+          icon="home"
+          label="Home"
+          onPress={() => navigation.navigate("Home")}
+        />
+        <SidebarItem
+          icon="person"
+          label="Profile"
+          onPress={() => navigation.navigate("Profile")}
+        />
+        <SidebarItem
+          icon="receipt-long"
+          label="My Orders"
+          onPress={() => navigation.navigate("Orders")}
+        />
+        <SidebarItem
+          icon="shopping-cart"
+          label="My Cart"
+          onPress={() => navigation.navigate("Cart")}
+        />
+        <SidebarItem
+          icon="history"
+          label="My Activity"
+          onPress={() => navigation.navigate("MyActivity")}
+        />
+        <SidebarItem
+          icon="add-box"
+          label="Add Product"
+          onPress={() => navigation.navigate("AddProduct")}
+        />
+        <SidebarItem
+          icon="settings"
+          label="Settings"
+          onPress={() => navigation.navigate("Settings")}
+        />
+       <SidebarItem
+          icon="message-text"
+          label="Feedback"
+          onPress={() => {
+            navigation.navigate("Feedback");
+            onClose();
+          }}
+        />
+        <SidebarItem
+          icon="logout"
+          label="Logout"
+          highlight
+          onPress={confirmLogout}
+        />
       </Animated.View>
     </>
+  );
+}
+
+function SidebarItem({ icon, label, onPress, highlight = false }) {
+  return (
+    <TouchableOpacity style={styles.sidebarItem} onPress={onPress}>
+      <MaterialIcons
+        name={icon}
+        size={22}
+        color={highlight ? "#C0392B" : "#2F6F61"} // red for logout
+        style={styles.icon}
+      />
+      <Text
+        style={[
+          styles.sidebarText,
+          highlight && { color: "#C0392B", fontWeight: "700" },
+        ]}
+      >
+        {label}
+      </Text>
+    </TouchableOpacity>
   );
 }
 
@@ -130,7 +162,7 @@ const styles = StyleSheet.create({
     left: 0,
     width,
     height,
-    backgroundColor: "rgba(0,0,0,0.4)",
+    backgroundColor: "rgba(0,0,0,0.35)",
     zIndex: 9,
   },
   sidebar: {
@@ -138,55 +170,57 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     left: 0,
-    backgroundColor: "#fff",
-    paddingTop: 40,
+    backgroundColor: "#FFFFFF",
+    paddingTop: 50,
     paddingHorizontal: 20,
     zIndex: 10,
     elevation: 10,
     shadowColor: "#000",
     shadowOffset: { width: 2, height: 0 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.15,
     shadowRadius: 5,
+    borderTopRightRadius: 20,
+    borderBottomRightRadius: 20,
   },
   userInfo: {
     flexDirection: "row",
     alignItems: "center",
     marginBottom: 30,
-    padding: 10,
-    backgroundColor: "#f9f9f9",
-    borderRadius: 12,
+    padding: 12,
+    backgroundColor: "#E8F0EC",
+    borderRadius: 16,
   },
   profileImage: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    marginRight: 15,
-    borderWidth: 3,
-    borderColor: "#ff6f61",
+    width: 70,
+    height: 70,
+    borderRadius: 40,
+    marginRight: 12,
+    borderWidth: 2,
+    borderColor: "#2F6F61",
   },
   userDetails: {
     flex: 1,
   },
   username: {
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: "700",
-    color: "#333",
+    color: "#2F2F2F",
   },
   email: {
-    fontSize: 14,
-    color: "#777",
-    marginTop: 4,
+    fontSize: 13,
+    color: "#6C757D",
+    marginTop: 2,
   },
   sidebarItem: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 15,
-    borderBottomColor: "#eee",
+    paddingVertical: 14,
+    borderBottomColor: "#F0F0F0",
     borderBottomWidth: 1,
   },
   sidebarText: {
-    fontSize: 18,
-    color: "#333",
+    fontSize: 16,
+    color: "#2F2F2F",
   },
   icon: {
     marginRight: 15,

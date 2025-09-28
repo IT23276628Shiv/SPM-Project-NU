@@ -1,4 +1,3 @@
-// context/AuthContext.js
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import authfirebase from '../../services/firebaseAuth';
@@ -12,36 +11,63 @@ export const AuthProvider = ({ children }) => {
   const [userDetails, setUserDetails] = useState(null);
 
   useEffect(() => {
-  const unsubscribe = onAuthStateChanged(authfirebase, async (firebaseUser) => {
-    if (firebaseUser) {
-      setUser(firebaseUser);
+    const unsubscribe = onAuthStateChanged(authfirebase, async (firebaseUser) => {
+      console.log('🔍 Firebase auth state changed:');
+      console.log('- Email:', firebaseUser?.email);
+      console.log('- UID:', firebaseUser?.uid);
+      
+      if (firebaseUser) {
+        setUser(firebaseUser);
 
-      try {
-        // Get Firebase ID token
-        const token = await firebaseUser.getIdToken();
+        try {
+          const token = await firebaseUser.getIdToken();
+          console.log('🎫 Got Firebase token, fetching user details...');
 
-        const res = await fetch(`${API_URL}/api/auth/user/${firebaseUser.uid}`, {
-          headers: {
-            'Authorization': `Bearer ${token}`,  // <-- send token
-          },
-        });
+          const res = await fetch(`${API_URL}/api/auth/user/${firebaseUser.uid}`, {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+            },
+          });
 
-        const data = await res.json();
-        setUserDetails(data.user); // note: your backend returns { user: {...} }
-      } catch (err) {
-        console.log("Error fetching user details:", err);
+          console.log('🌐 API Request:', res.status, res.ok);
+          const data = await res.json();
+          console.log('📦 Raw API Response:', data);
+
+          if (res.ok && data.user) {
+            const mappedUser = {
+              _id: data.user._id,
+              username: data.user.username,
+              email: data.user.email,
+              role: data.user.role || null,   // ✅ force include role
+              favoriteProducts: data.user.favoriteProducts || [],
+              infoCompleted: data.user.infoCompleted,
+              registrationDate: data.user.registrationDate,
+              ratingAverage: data.user.ratingAverage,
+              profilePictureUrl: data.user.profilePictureUrl,
+              address: data.user.address,
+              bio: data.user.bio,
+            };
+
+            setUserDetails(mappedUser);
+            console.log('🎯 Setting userDetails to:', mappedUser);
+          } else {
+            console.log('❌ User not found or API error:', data.error);
+            setUserDetails(null);
+          }
+        } catch (err) {
+          console.error("💥 Error fetching user details:", err);
+          setUserDetails(null);
+        }
+      } else {
+        console.log('🚪 User logged out');
+        setUser(null);
+        setUserDetails(null);
       }
+      setLoading(false);
+    });
 
-    } else {
-      setUser(null);
-      setUserDetails(null);
-    }
-    setLoading(false);
-  });
-
-  return () => unsubscribe();
-}, []);
-
+    return () => unsubscribe();
+  }, []);
 
   const logout = async () => {
     try {
@@ -53,8 +79,23 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  useEffect(() => {
+    console.log('🔄 AuthContext State Update:');
+    console.log('- User exists:', !!user);
+    console.log('- Loading:', loading);
+    console.log('- UserDetails exists:', !!userDetails);
+    console.log('- UserDetails.role:', userDetails?.role);
+    console.log('- IsAdmin computed:', userDetails?.role === 'admin' || userDetails?.role === 'super_admin');
+  }, [user, loading, userDetails]);
+
   return (
-    <AuthContext.Provider value={{ user, loading, userDetails, logout }}>
+    <AuthContext.Provider value={{ 
+      user, 
+      loading, 
+      userDetails, 
+      logout,
+      isAdmin: userDetails?.role === 'admin' || userDetails?.role === 'super_admin'
+    }}>
       {children}
     </AuthContext.Provider>
   );

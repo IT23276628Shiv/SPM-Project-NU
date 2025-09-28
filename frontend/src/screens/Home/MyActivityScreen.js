@@ -15,6 +15,17 @@ import { useAuth } from "../../context/AuthContext";
 import { API_URL } from "../../constants/config";
 import Layout from "../../components/Layouts";
 
+// Theme colors
+const theme = {
+  primary: "#2F6F61",   // muted green
+  accent: "#FF6F61",    // coral
+  danger: "#D32F2F",    // red
+  background: "#F9FAFB",
+  card: "#FFFFFF",
+  muted: "#6C757D",
+  border: "#E5E7EB",
+};
+
 export default function MyActivityScreen() {
   const { user } = useAuth();
   const navigation = useNavigation();
@@ -61,14 +72,12 @@ export default function MyActivityScreen() {
     try {
       const res = await axios.get(`${API_URL}/api/products?all=true`);
       const allProducts = res.data || [];
-
       const requests = [];
 
       allProducts.forEach((product) => {
         if (!product.swapRequests) return;
 
         product.swapRequests.forEach((req) => {
-          // Include swap if user is buyer or seller
           if (req.buyerId === user.uid || product.ownerId?.firebaseUid === user.uid) {
             const buyerProduct = allProducts.find((p) => p._id === req.buyerProductId);
 
@@ -152,13 +161,17 @@ export default function MyActivityScreen() {
       {item.imagesUrls?.[0] ? (
         <Image source={{ uri: item.imagesUrls[0] }} style={styles.cardImage} />
       ) : (
-        <View style={[styles.cardImage, { backgroundColor: "#ccc" }]} />
+        <View style={[styles.cardImage, { backgroundColor: theme.border }]} />
       )}
       <View style={styles.cardInfo}>
         <Text style={styles.cardTitle}>{item.title}</Text>
         <Text style={styles.cardPrice}>LKR. {formatPrice(item.price)}</Text>
         <Text style={styles.cardCondition}>Condition: {item.condition}</Text>
-        <View style={styles.ownerBadge}>
+        <View style={[styles.ownerBadge, 
+          item.status === "available" && { backgroundColor: theme.primary },
+          item.status === "sold" && { backgroundColor: theme.accent },
+          item.status === "swapped" && { backgroundColor: "#6B7280" },
+        ]}>
           <Text style={styles.ownerBadgeText}>{item.status}</Text>
         </View>
       </View>
@@ -247,34 +260,34 @@ export default function MyActivityScreen() {
               {req.buyerId === user.uid ? (
                 <>
                   {/* Buyer View */}
-                  <Text style={{ fontWeight: "bold", marginBottom: 4 }}>Seller’s Product:</Text>
+                  <Text style={styles.subTitle}>Seller’s Product:</Text>
                   <TouchableOpacity
                     onPress={() => navigation.navigate("ProductDetails", { product: req.sellerProduct })}
                   >
                     {req.sellerProduct.imagesUrls?.[0] ? (
                       <Image source={{ uri: req.sellerProduct.imagesUrls[0] }} style={styles.cardImage} />
                     ) : (
-                      <View style={[styles.cardImage, { backgroundColor: "#ccc" }]} />
+                      <View style={[styles.cardImage, { backgroundColor: theme.border }]} />
                     )}
                     <Text>{req.sellerProduct.title}</Text>
                   </TouchableOpacity>
 
-                  <Text style={{ fontWeight: "bold", marginTop: 6 }}>Your Offered Product:</Text>
+                  <Text style={styles.subTitle}>Your Offered Product:</Text>
                   <TouchableOpacity
                     onPress={() => navigation.navigate("ProductDetails", { product: req.buyerProduct })}
                   >
                     {req.buyerProduct.imagesUrls?.[0] ? (
                       <Image source={{ uri: req.buyerProduct.imagesUrls[0] }} style={styles.cardImage} />
                     ) : (
-                      <View style={[styles.cardImage, { backgroundColor: "#ccc" }]} />
+                      <View style={[styles.cardImage, { backgroundColor: theme.border }]} />
                     )}
                     <Text>{req.buyerProduct.title}</Text>
                   </TouchableOpacity>
 
-                  <Text style={{ marginTop: 6, fontSize: 12, color: "#777" }}>Status: {req.status}</Text>
+                  <Text style={styles.statusText}>Status: {req.status}</Text>
                   {req.status === "pending" && (
                     <TouchableOpacity
-                      style={[styles.ownerBadge, { backgroundColor: "#ff4d4f" }]}
+                      style={[styles.ownerBadge, { backgroundColor: theme.danger }]}
                       onPress={() => cancelSwap(req)}
                     >
                       <Text style={styles.ownerBadgeText}>Cancel Request</Text>
@@ -284,34 +297,32 @@ export default function MyActivityScreen() {
               ) : (
                 <>
                   {/* Seller View */}
-                  <Text style={{ fontWeight: "bold", marginBottom: 4 }}>Your Product:</Text>
+                  <Text style={styles.subTitle}>Your Product:</Text>
                   <TouchableOpacity
                     onPress={() => navigation.navigate("ProductDetails", { product: req.sellerProduct })}
                   >
                     {req.sellerProduct.imagesUrls?.[0] ? (
                       <Image source={{ uri: req.sellerProduct.imagesUrls[0] }} style={styles.cardImage} />
                     ) : (
-                      <View style={[styles.cardImage, { backgroundColor: "#ccc" }]} />
+                      <View style={[styles.cardImage, { backgroundColor: theme.border }]} />
                     )}
                     <Text>{req.sellerProduct.title}</Text>
                   </TouchableOpacity>
 
-                  <Text style={{ fontWeight: "bold", marginTop: 6 }}>Buyer’s Offered Product:</Text>
+                  <Text style={styles.subTitle}>Buyer’s Offered Product:</Text>
                   <TouchableOpacity
                     onPress={() => navigation.navigate("ProductDetails", { product: req.buyerProduct })}
                   >
                     {req.buyerProduct.imagesUrls?.[0] ? (
                       <Image source={{ uri: req.buyerProduct.imagesUrls[0] }} style={styles.cardImage} />
                     ) : (
-                      <View style={[styles.cardImage, { backgroundColor: "#ccc" }]} />
+                      <View style={[styles.cardImage, { backgroundColor: theme.border }]} />
                     )}
                     <Text>{req.buyerProduct.title}</Text>
                   </TouchableOpacity>
 
-                  <Text style={{ marginTop: 6, fontSize: 12, color: "#555" }}>
-                    {req.buyerName} wants to swap
-                  </Text>
-                  <Text style={{ fontSize: 12, color: "#777" }}>Status: {req.status}</Text>
+                  <Text style={styles.smallNote}>{req.buyerName} wants to swap</Text>
+                  <Text style={styles.statusText}>Status: {req.status}</Text>
 
                   {req.status === "pending" && req.sellerId === user.uid && (
                     <View style={styles.swapActions}>
@@ -339,31 +350,26 @@ export default function MyActivityScreen() {
   );
 }
 
-
 // Styles
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f5f5f5" },
+  container: { flex: 1, backgroundColor: theme.background },
   addProductBtn: {
-    backgroundColor: "#2f95dc",
+    backgroundColor: theme.primary,
     paddingVertical: 14,
     paddingHorizontal: 20,
     borderRadius: 12,
     marginHorizontal: 16,
     marginVertical: 10,
     alignItems: "center",
-    elevation: 3,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 3,
+    elevation: 2,
   },
   addProductText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
   sectionTitle: {
     fontSize: 20,
-    fontWeight: "bold",
+    fontWeight: "700",
     marginHorizontal: 16,
     marginBottom: 12,
-    color: "#ff6f61",
+    color: theme.accent,
   },
   itemsContainer: {
     flexDirection: "column",
@@ -372,7 +378,7 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     textAlign: "center",
-    color: "#777",
+    color: theme.muted,
     width: "100%",
     marginBottom: 12,
     fontSize: 14,
@@ -380,15 +386,11 @@ const styles = StyleSheet.create({
   },
   card: {
     width: "100%",
-    backgroundColor: "#fff",
+    backgroundColor: theme.card,
     borderRadius: 12,
     marginBottom: 15,
     overflow: "hidden",
     elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
     padding: 12,
   },
   cardImage: {
@@ -403,28 +405,22 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     marginBottom: 4,
-    color: "#333",
+    color: "#2F2F2F",
   },
   cardPrice: {
     fontSize: 14,
-    color: "#ff6f61",
+    color: theme.accent,
     fontWeight: "bold",
     marginBottom: 2,
   },
-  cardCondition: { fontSize: 12, color: "#555", marginBottom: 4 },
+  cardCondition: { fontSize: 12, color: theme.muted, marginBottom: 4 },
   ownerBadge: {
     marginTop: 8,
-    backgroundColor: "#2f95dc",
-    paddingVertical: 8,
+    paddingVertical: 6,
     paddingHorizontal: 12,
     borderRadius: 20,
     alignItems: "center",
     alignSelf: "flex-start",
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.15,
-    shadowRadius: 2,
   },
   ownerBadgeText: { color: "#fff", fontWeight: "bold", fontSize: 12 },
   swapActions: {
@@ -438,28 +434,19 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: "center",
     marginRight: 8,
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
   },
-  swapAcceptBtn: { backgroundColor: "green" },
-  swapRejectBtn: { backgroundColor: "red" },
+  swapAcceptBtn: { backgroundColor: theme.primary },
+  swapRejectBtn: { backgroundColor: theme.danger },
 
   statsContainer: {
     flexDirection: "row",
     justifyContent: "space-between",
     marginHorizontal: 8,
     marginBottom: 20,
-    backgroundColor: "#fff",
+    backgroundColor: theme.card,
     padding: 12,
     borderRadius: 12,
     elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
   },
   statBox: {
     flex: 1,
@@ -468,11 +455,14 @@ const styles = StyleSheet.create({
   statNumber: {
     fontSize: 18,
     fontWeight: "bold",
-    color: "#2f95dc",
+    color: theme.primary,
   },
   statLabel: {
     fontSize: 12,
-    color: "#555",
+    color: theme.muted,
     marginTop: 4,
   },
+  subTitle: { fontWeight: "600", marginTop: 6, marginBottom: 4, color: "#2F2F2F" },
+  statusText: { marginTop: 6, fontSize: 12, color: theme.muted },
+  smallNote: { fontSize: 12, color: theme.muted, marginTop: 6 },
 });

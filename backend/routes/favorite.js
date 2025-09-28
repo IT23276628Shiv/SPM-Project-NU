@@ -1,54 +1,44 @@
-import { Router } from 'express';
-import jwt from 'jsonwebtoken';
-import Favorite from '../models/favorite.js';
+// routes/favorites.js
+import express from "express";
+import Favorite from "../models/Favorite.js";
+import { authMiddleware } from "../middleware/auth.js";
 
-const router = Router();
+const router = express.Router();
 
-// Middleware to verify JWT token
-const authMiddleware = (req, res, next) => {
-  const token = req.headers.authorization?.split(' ')[1];
-  if (!token) return res.status(401).json({ error: 'No token provided' });
-
+// Get user favorites
+router.get("/", authMiddleware, async (req, res) => {
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.userId = decoded.sub;
-    next();
-  } catch (e) {
-    res.status(401).json({ error: 'Invalid token' });
+    const favorites = await Favorite.find({ userId: req.userId }).populate("productId");
+    res.json({ favorites });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch favorites" });
   }
-};
+});
 
-// Create a favorite (protected)
-router.post('/', authMiddleware, async (req, res) => {
+// Add favorite
+router.post("/", authMiddleware, async (req, res) => {
+  const { productId } = req.body;
   try {
-    const { productId } = req.body;
-    if (!productId) return res.status(400).json({ error: 'Missing productId' });
+    const existing = await Favorite.findOne({ userId: req.userId, productId });
+    if (existing) return res.status(400).json({ error: "Already in favorites" });
 
     const favorite = await Favorite.create({ userId: req.userId, productId });
-    res.status(201).json({ favorite });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.json({ favorite });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to add favorite" });
   }
 });
 
-// Get all favorites for a user (protected)
-router.get('/', authMiddleware, async (req, res) => {
+// Delete favorite
+router.delete("/:id", authMiddleware, async (req, res) => {
   try {
-    const favorites = await Favorite.find({ userId: req.userId }).populate('productId', 'title');
-    res.json({ favorites });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// Delete a favorite (protected)
-router.delete('/:id', authMiddleware, async (req, res) => {
-  try {
-    const favorite = await Favorite.findOneAndDelete({ _id: req.params.id, userId: req.userId });
-    if (!favorite) return res.status(404).json({ error: 'Favorite not found or unauthorized' });
-    res.json({ message: 'Favorite deleted' });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
+    await Favorite.findByIdAndDelete(req.params.id);
+    res.json({ message: "Removed from favorites" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to remove favorite" });
   }
 });
 

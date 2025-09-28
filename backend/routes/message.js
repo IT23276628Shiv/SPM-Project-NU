@@ -1,4 +1,4 @@
-// backend/routes/message.js
+// backend/routes/message.js - UPDATED VERSION with reply handling
 import { Router } from 'express';
 import Message from '../models/message.js';
 import Conversation from '../models/Conversation.js';
@@ -100,7 +100,7 @@ router.post('/conversations/start', authMiddleware, async (req, res) => {
   }
 });
 
-// Send a message
+// UPDATED: Send a message with reply support
 router.post('/send', authMiddleware, async (req, res) => {
   try {
     const { 
@@ -111,7 +111,8 @@ router.post('/send', authMiddleware, async (req, res) => {
       imageUrl,
       sharedProduct,
       callDuration,
-      callType
+      callType,
+      replyTo // NEW: Reply to message ID
     } = req.body;
 
     if (!conversationId || !receiverId) {
@@ -127,8 +128,17 @@ router.post('/send', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'imageUrl is required for image messages' });
     }
 
+    // If replying, validate the original message exists
+    let replyToMessage = null;
+    if (replyTo) {
+      replyToMessage = await Message.findById(replyTo).populate('senderId', 'username');
+      if (!replyToMessage) {
+        return res.status(404).json({ error: 'Message to reply to not found' });
+      }
+    }
+
     // Create message
-    const message = await Message.create({
+    const messageData = {
       senderId: req.userId,
       receiverId: receiverId,
       content: content,
@@ -138,7 +148,20 @@ router.post('/send', authMiddleware, async (req, res) => {
       callDuration: callDuration,
       callType: callType,
       isDelivered: true
-    });
+    };
+
+    // Add reply reference if replying
+    if (replyToMessage) {
+      messageData.replyTo = {
+        messageId: replyToMessage._id,
+        senderId: replyToMessage.senderId,
+        content: replyToMessage.content,
+        messageType: replyToMessage.messageType,
+        imageUrl: replyToMessage.imageUrl
+      };
+    }
+
+    const message = await Message.create(messageData);
 
     // Update conversation
     await Conversation.findByIdAndUpdate(conversationId, {
@@ -154,8 +177,11 @@ router.post('/send', authMiddleware, async (req, res) => {
       updatedAt: new Date()
     });
 
-    // Populate sender info
+    // Populate sender info and reply info
     await message.populate('senderId', 'username profilePictureUrl');
+    if (message.replyTo) {
+      await message.populate('replyTo.senderId', 'username');
+    }
 
     res.status(201).json({ message });
   } catch (error) {
@@ -164,7 +190,7 @@ router.post('/send', authMiddleware, async (req, res) => {
   }
 });
 
-// Upload image for message
+// FIXED: Upload image for message with proper base64 handling
 router.post('/upload-image', authMiddleware, async (req, res) => {
   try {
     const { image } = req.body; // base64 image string
@@ -173,19 +199,28 @@ router.post('/upload-image', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'Image is required' });
     }
 
+    // Upload to Cloudinary
     const uploadResponse = await cloudinary.uploader.upload(image, {
       folder: 'chat_images',
-      resource_type: 'image'
+      resource_type: 'image',
+      transformation: [
+        { width: 800, height: 600, crop: 'limit' },
+        { quality: 'auto' },
+        { fetch_format: 'auto' }
+      ]
     });
 
-    res.json({ imageUrl: uploadResponse.secure_url });
+    res.json({ 
+      imageUrl: uploadResponse.secure_url,
+      publicId: uploadResponse.public_id
+    });
   } catch (error) {
     console.error('Error uploading image:', error);
     res.status(500).json({ error: 'Failed to upload image' });
   }
 });
 
-// Get messages for a conversation
+// UPDATED: Get messages for a conversation with reply population
 router.get('/conversations/:conversationId/messages', authMiddleware, async (req, res) => {
   try {
     const { conversationId } = req.params;
@@ -201,6 +236,7 @@ router.get('/conversations/:conversationId/messages', authMiddleware, async (req
       return res.status(404).json({ error: 'Conversation not found' });
     }
 
+    // Find messages between conversation participants
     const messages = await Message.find({
       $or: [
         { senderId: req.userId, receiverId: { $in: conversation.participants } },
@@ -210,6 +246,7 @@ router.get('/conversations/:conversationId/messages', authMiddleware, async (req
     .populate('senderId', 'username profilePictureUrl')
     .populate('receiverId', 'username profilePictureUrl')
     .populate('sharedProduct.productId', 'title price imagesUrls')
+    .populate('replyTo.senderId', 'username') // Populate reply sender info
     .sort({ sentDate: -1 })
     .limit(limit * 1)
     .skip((page - 1) * limit);
@@ -248,7 +285,7 @@ router.put('/conversations/:conversationId/mark-read', authMiddleware, async (re
   }
 });
 
-// Delete a conversation
+// FIXED: Delete a conversation properly
 router.delete('/conversations/:conversationId', authMiddleware, async (req, res) => {
   try {
     const { conversationId } = req.params;
@@ -280,7 +317,8 @@ router.delete('/conversations/:conversationId', authMiddleware, async (req, res)
     res.status(500).json({ error: 'Failed to delete conversation' });
   }
 });
-// Delete a specific message
+
+// FIXED: Delete a specific message with proper authorization
 router.delete('/:messageId', authMiddleware, async (req, res) => {
   try {
     const { messageId } = req.params;
@@ -300,36 +338,37 @@ router.delete('/:messageId', authMiddleware, async (req, res) => {
     // Delete the message
     await Message.findByIdAndDelete(messageId);
 
-    // Update the conversation's last message if this was the last message
-    const conversation = await Conversation.findOne({
-      $or: [
-        { participants: { $all: [message.senderId, message.receiverId] } }
-      ]
+    // Find conversations that might need last message update
+    const conversations = await Conversation.find({
+      participants: req.userId
     });
 
-    if (conversation && conversation.lastMessage.messageId?.toString() === messageId) {
-      // Find the new last message
-      const lastMessage = await Message.findOne({
-        $or: [
-          { senderId: message.senderId, receiverId: message.receiverId },
-          { senderId: message.receiverId, receiverId: message.senderId }
-        ]
-      }).sort({ sentDate: -1 });
+    for (const conversation of conversations) {
+      if (conversation.lastMessage && conversation.lastMessage.messageId === messageId) {
+        // Find the new last message
+        const lastMessage = await Message.findOne({
+          $or: [
+            { senderId: req.userId, receiverId: { $in: conversation.participants } },
+            { senderId: { $in: conversation.participants }, receiverId: req.userId }
+          ]
+        }).sort({ sentDate: -1 });
 
-      if (lastMessage) {
-        await Conversation.findByIdAndUpdate(conversation._id, {
-          lastMessage: {
-            content: lastMessage.content || `${lastMessage.messageType} message`,
-            senderId: lastMessage.senderId,
-            messageType: lastMessage.messageType,
-            sentDate: lastMessage.sentDate
-          }
-        });
-      } else {
-        // No messages left, clear last message
-        await Conversation.findByIdAndUpdate(conversation._id, {
-          lastMessage: null
-        });
+        if (lastMessage) {
+          await Conversation.findByIdAndUpdate(conversation._id, {
+            lastMessage: {
+              content: lastMessage.content || `${lastMessage.messageType} message`,
+              senderId: lastMessage.senderId,
+              messageType: lastMessage.messageType,
+              sentDate: lastMessage.sentDate,
+              messageId: lastMessage._id
+            }
+          });
+        } else {
+          // No messages left, clear last message
+          await Conversation.findByIdAndUpdate(conversation._id, {
+            lastMessage: null
+          });
+        }
       }
     }
 
@@ -340,7 +379,7 @@ router.delete('/:messageId', authMiddleware, async (req, res) => {
   }
 });
 
-// Also add this route to get product details for chat
+// Get product details for chat
 router.get('/product/:productId', authMiddleware, async (req, res) => {
   try {
     const { productId } = req.params;
@@ -366,4 +405,5 @@ router.get('/product/:productId', authMiddleware, async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch product details' });
   }
 });
+
 export default router;

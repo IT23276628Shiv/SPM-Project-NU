@@ -4,7 +4,6 @@ import {
   View,
   Text,
   StyleSheet,
-  FlatList,
   TouchableOpacity,
   Image,
   Alert,
@@ -14,6 +13,17 @@ import {
 import { useRoute, useNavigation } from "@react-navigation/native";
 import { useAuth } from "../../context/AuthContext";
 import { API_URL } from "../../constants/config";
+
+// Theme
+const theme = {
+  primary: "#2F6F61",   // deep muted green
+  accent: "#FF6F61",    // coral
+  background: "#F9FAFB",
+  card: "#FFFFFF",
+  border: "#E5E7EB",
+  muted: "#6B7280",
+  success: "#4CAF50",
+};
 
 export default function SwapScreen() {
   const route = useRoute();
@@ -33,21 +43,15 @@ export default function SwapScreen() {
         const data = await res.json();
 
         if (res.ok) {
-          // 🔹 Only my products
           const mine = (data || []).filter(
             (p) => p.ownerId?.firebaseUid === user?.uid
           );
-
-          // 🔹 Only "available"
           const available = mine.filter(
             (p) => p.status?.toLowerCase() === "available"
           );
-
-          // 🔹 Price match ONLY (no category restriction)
           const matching = available.filter(
             (p) => Number(p.price) === Number(product.price)
           );
-
           setMyProducts(matching);
         } else {
           Alert.alert("Error", data.error || "Failed to fetch products");
@@ -80,8 +84,8 @@ export default function SwapScreen() {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          buyerId: user.uid, // logged-in buyer
-          buyerProductId: selectedProduct._id, // product they’re offering
+          buyerId: user.uid,
+          buyerProductId: selectedProduct._id,
         }),
       });
 
@@ -101,12 +105,12 @@ export default function SwapScreen() {
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#4caf50" />
+        <ActivityIndicator size="large" color={theme.primary} />
       </View>
     );
   }
 
-  // Group by category for nicer UI
+  // Group by category
   const sections = myProducts.reduce((acc, item) => {
     const category = item.category || "Other";
     const existing = acc.find((s) => s.title === category);
@@ -180,50 +184,57 @@ export default function SwapScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, backgroundColor: "#fff" },
-  sectionTitle: { fontSize: 18, fontWeight: "bold", marginVertical: 10 },
+  container: { flex: 1, padding: 16, backgroundColor: theme.background },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    marginVertical: 10,
+    color: theme.accent,
+  },
   sellerProduct: {
     alignItems: "center",
     marginBottom: 20,
-    padding: 12,
+    padding: 16,
     borderWidth: 1,
-    borderColor: "#eee",
-    borderRadius: 10,
-    backgroundColor: "#fafafa",
+    borderColor: theme.border,
+    borderRadius: 12,
+    backgroundColor: theme.card,
+    elevation: 2,
   },
-  image: { width: 200, height: 200, borderRadius: 10 },
-  imageSmall: { width: 80, height: 80, borderRadius: 8 },
-  title: { fontSize: 18, fontWeight: "bold", marginTop: 8 },
-  productTitle: { fontSize: 16, fontWeight: "600" },
-  price: { fontSize: 16, color: "#ff6f61" },
-  priceSmall: { fontSize: 14, color: "#666" },
+  image: { width: 200, height: 200, borderRadius: 12 },
+  imageSmall: { width: 80, height: 80, borderRadius: 10 },
+  title: { fontSize: 18, fontWeight: "700", marginTop: 8, color: "#111827" },
+  productTitle: { fontSize: 16, fontWeight: "600", color: "#1F2937" },
+  price: { fontSize: 16, color: theme.accent, fontWeight: "600" },
+  priceSmall: { fontSize: 14, color: theme.muted },
   productCard: {
     flexDirection: "row",
     alignItems: "center",
     padding: 12,
     marginVertical: 6,
     borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 8,
-    backgroundColor: "#fff",
+    borderColor: theme.border,
+    borderRadius: 10,
+    backgroundColor: theme.card,
     elevation: 1,
   },
-  selectedCard: { borderColor: "#4caf50", backgroundColor: "#e8f5e9" },
+  selectedCard: { borderColor: theme.success, backgroundColor: "#E8F5E9" },
   categoryHeader: {
     fontSize: 16,
-    fontWeight: "bold",
+    fontWeight: "700",
     marginTop: 15,
-    marginBottom: 5,
-    color: "#333",
+    marginBottom: 6,
+    color: theme.primary,
   },
   confirmBtn: {
-    backgroundColor: "#4caf50",
+    backgroundColor: theme.success,
     padding: 14,
-    borderRadius: 25,
+    borderRadius: 30,
     alignItems: "center",
     marginTop: 20,
+    elevation: 3,
   },
-  confirmBtnText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
+  confirmBtnText: { color: "#fff", fontWeight: "700", fontSize: 16 },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
-  noProductText: { fontSize: 16, color: "#888", marginTop: 20 },
+  noProductText: { fontSize: 15, color: theme.muted, marginTop: 20 },
 });

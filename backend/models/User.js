@@ -17,6 +17,7 @@ const userSchema = new mongoose.Schema(
     ratingAverage: { type: Number, default: 0 },
     favoriteProducts: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Product' }], // Updated to reference Product
     infoCompleted: { type: Boolean, default: false },
+    role: { type: String, enum: ['user', 'admin', 'super_admin'], default: 'user' },
   },
   { timestamps: true }
 );

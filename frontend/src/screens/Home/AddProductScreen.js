@@ -17,7 +17,7 @@ import { useAuth } from "../../context/AuthContext";
 export default function AddProductScreen({ navigation }) {
   const { user } = useAuth();
 
-  const [categories, setCategories] = useState([]); // initialize as empty array
+  const [categories, setCategories] = useState([]);
   const [categoryId, setCategoryId] = useState("");
   const [customCategory, setCustomCategory] = useState("");
   const [title, setTitle] = useState("");
@@ -28,7 +28,7 @@ export default function AddProductScreen({ navigation }) {
   const [address, setAddress] = useState("");
   const [images, setImages] = useState([]);
 
-  // Fetch categories from backend
+  // Fetch categories
   useEffect(() => {
     const fetchCategories = async () => {
       try {
@@ -36,7 +36,7 @@ export default function AddProductScreen({ navigation }) {
         setCategories(res.data || []);
       } catch (err) {
         console.error("Error fetching categories:", err);
-        setCategories([]); // fallback
+        setCategories([]);
       }
     };
     fetchCategories();
@@ -97,10 +97,7 @@ export default function AddProductScreen({ navigation }) {
       !address ||
       images.length === 0
     ) {
-      Alert.alert(
-        "Error",
-        "Please fill all required fields and add at least 1 image"
-      );
+      Alert.alert("Error", "Please fill all required fields and add at least 1 image");
       return;
     }
 
@@ -161,7 +158,7 @@ export default function AddProductScreen({ navigation }) {
 
       <Text style={styles.label}>Description</Text>
       <TextInput
-        style={[styles.input, { height: 80 }]}
+        style={[styles.input, { height: 90 }]}
         placeholder="Product description"
         multiline
         value={description}
@@ -169,25 +166,24 @@ export default function AddProductScreen({ navigation }) {
       />
 
       <Text style={styles.label}>Category</Text>
-      {categories?.map((cat) => (
-        <TouchableOpacity
-          key={cat._id}
-          style={[
-            styles.categoryBtn,
-            categoryId === cat._id && styles.selectedCategory,
-          ]}
-          onPress={() => setCategoryId(cat._id)}
-        >
-          <Text
-            style={[
-              styles.categoryText,
-              categoryId === cat._id && styles.selectedCategoryText,
-            ]}
+      <View style={styles.chipGroup}>
+        {categories?.map((cat) => (
+          <TouchableOpacity
+            key={cat._id}
+            style={[styles.chip, categoryId === cat._id && styles.chipSelected]}
+            onPress={() => setCategoryId(cat._id)}
           >
-            {cat.name}
-          </Text>
-        </TouchableOpacity>
-      ))}
+            <Text
+              style={[
+                styles.chipText,
+                categoryId === cat._id && styles.chipTextSelected,
+              ]}
+            >
+              {cat.name}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
 
       {categoryId === "other" && (
         <TextInput
@@ -199,25 +195,24 @@ export default function AddProductScreen({ navigation }) {
       )}
 
       <Text style={styles.label}>Condition</Text>
-      {["new", "like_new", "good", "fair", "poor"].map((c) => (
-        <TouchableOpacity
-          key={c}
-          style={[
-            styles.conditionBtn,
-            condition === c && styles.selectedCondition,
-          ]}
-          onPress={() => setCondition(c)}
-        >
-          <Text
-            style={[
-              styles.conditionText,
-              condition === c && styles.selectedConditionText,
-            ]}
+      <View style={styles.chipGroup}>
+        {["new", "like_new", "good", "fair", "poor"].map((c) => (
+          <TouchableOpacity
+            key={c}
+            style={[styles.chip, condition === c && styles.conditionSelected]}
+            onPress={() => setCondition(c)}
           >
-            {c}
-          </Text>
-        </TouchableOpacity>
-      ))}
+            <Text
+              style={[
+                styles.chipText,
+                condition === c && styles.chipTextSelected,
+              ]}
+            >
+              {c}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
 
       <Text style={styles.label}>Price</Text>
       <TextInput
@@ -237,22 +232,18 @@ export default function AddProductScreen({ navigation }) {
       />
 
       <Text style={styles.label}>Swap Preference</Text>
-      <View style={{ flexDirection: "row", marginBottom: 10 }}>
+      <View style={styles.chipGroup}>
         <TouchableOpacity
-          style={[styles.swapBtn, isForSwap && styles.selectedSwap]}
+          style={[styles.chip, isForSwap && styles.chipSelected]}
           onPress={() => setIsForSwap(true)}
         >
-          <Text style={[styles.swapText, isForSwap && styles.selectedSwapText]}>
-            Yes
-          </Text>
+          <Text style={[styles.chipText, isForSwap && styles.chipTextSelected]}>Yes</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.swapBtn, !isForSwap && styles.selectedSwap]}
+          style={[styles.chip, !isForSwap && styles.chipSelected]}
           onPress={() => setIsForSwap(false)}
         >
-          <Text style={[styles.swapText, !isForSwap && styles.selectedSwapText]}>
-            No
-          </Text>
+          <Text style={[styles.chipText, !isForSwap && styles.chipTextSelected]}>No</Text>
         </TouchableOpacity>
       </View>
 
@@ -265,7 +256,7 @@ export default function AddProductScreen({ navigation }) {
           <View key={idx} style={{ position: "relative", marginRight: 10 }}>
             <Image
               source={{ uri }}
-              style={{ width: 100, height: 100, borderRadius: 8 }}
+              style={{ width: 100, height: 100, borderRadius: 12 }}
             />
             <TouchableOpacity
               style={styles.removeImageBtn}
@@ -281,10 +272,7 @@ export default function AddProductScreen({ navigation }) {
         <Text style={styles.submitText}>Submit Product</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity
-        style={[styles.submitBtn, { backgroundColor: "gray" }]}
-        onPress={resetForm}
-      >
+      <TouchableOpacity style={[styles.submitBtn, { backgroundColor: "#ADB5BD" }]} onPress={resetForm}>
         <Text style={styles.submitText}>Clear All</Text>
       </TouchableOpacity>
     </ScrollView>
@@ -292,66 +280,56 @@ export default function AddProductScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 20 },
-  label: { fontWeight: "bold", marginTop: 10, marginBottom: 5 },
+  container: { flex: 1, padding: 20, backgroundColor: "#F8F9FA" },
+  label: { fontWeight: "700", fontSize: 15, marginTop: 15, marginBottom: 6, color: "#2F2F2F" },
   input: {
     backgroundColor: "#fff",
-    borderRadius: 8,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: "#ccc",
-    marginBottom: 10,
-  },
-  categoryBtn: {
-    backgroundColor: "#eee",
-    padding: 8,
-    borderRadius: 8,
-    marginBottom: 5,
-  },
-  selectedCategory: { backgroundColor: "#2f95dc" },
-  categoryText: { color: "#000" },
-  selectedCategoryText: { color: "#fff", fontWeight: "bold" },
-  conditionBtn: {
-    backgroundColor: "#eee",
-    padding: 8,
-    borderRadius: 8,
-    marginBottom: 5,
-  },
-  selectedCondition: { backgroundColor: "#ff6f61" },
-  conditionText: { color: "#000" },
-  selectedConditionText: { color: "#fff", fontWeight: "bold" },
-  swapBtn: {
-    flex: 1,
-    padding: 10,
-    backgroundColor: "#eee",
-    borderRadius: 8,
-    marginRight: 5,
-    alignItems: "center",
-  },
-  selectedSwap: { backgroundColor: "#2f95dc" },
-  swapText: { color: "#000", fontWeight: "bold" },
-  selectedSwapText: { color: "#fff" },
-  imageBtn: {
-    backgroundColor: "#2f95dc",
+    borderRadius: 12,
     padding: 12,
-    borderRadius: 12,
-    marginVertical: 10,
+    borderWidth: 1,
+    borderColor: "#CED4DA",
+    marginBottom: 10,
+    fontSize: 15,
+  },
+  chipGroup: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    marginBottom: 10,
+    gap: 8,
+  },
+  chip: {
+    backgroundColor: "#E1EDE7",
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    marginRight: 8,
+    marginBottom: 8,
+  },
+  chipSelected: { backgroundColor: "#2F6F61" },
+  conditionSelected: { backgroundColor: "#FF6F61" },
+  chipText: { color: "#2F2F2F", fontWeight: "500" },
+  chipTextSelected: { color: "#fff", fontWeight: "700" },
+  imageBtn: {
+    backgroundColor: "#2F6F61",
+    padding: 12,
+    borderRadius: 16,
+    marginVertical: 12,
     alignItems: "center",
   },
-  imageBtnText: { color: "#fff", fontWeight: "bold" },
+  imageBtnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
   submitBtn: {
-    backgroundColor: "#ff6f61",
+    backgroundColor: "#FF6F61",
     padding: 15,
-    borderRadius: 12,
+    borderRadius: 16,
     marginTop: 20,
     alignItems: "center",
   },
-  submitText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
+  submitText: { color: "#fff", fontWeight: "700", fontSize: 16 },
   removeImageBtn: {
     position: "absolute",
     top: -8,
     right: -8,
-    backgroundColor: "red",
+    backgroundColor: "#C0392B",
     borderRadius: 12,
     width: 24,
     height: 24,
