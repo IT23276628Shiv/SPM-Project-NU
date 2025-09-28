@@ -12,15 +12,16 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(authfirebase, async (firebaseUser) => {
-      console.log('🔍 Firebase auth state changed:', firebaseUser?.email);
+      console.log('🔍 Firebase auth state changed:');
+      console.log('- Email:', firebaseUser?.email);
+      console.log('- UID:', firebaseUser?.uid);
       
       if (firebaseUser) {
         setUser(firebaseUser);
 
         try {
-          // Get Firebase ID token
           const token = await firebaseUser.getIdToken();
-          console.log('🎫 Getting user details from backend...');
+          console.log('🎫 Got Firebase token, fetching user details...');
 
           const res = await fetch(`${API_URL}/api/auth/user/${firebaseUser.uid}`, {
             headers: {
@@ -28,24 +29,29 @@ export const AuthProvider = ({ children }) => {
             },
           });
 
+          console.log('🌐 API Request:', res.status, res.ok);
           const data = await res.json();
-          console.log('👤 User details response:', {
-            status: res.status,
-            role: data.user?.role,
-            email: data.user?.email
-          });
+          console.log('📦 Raw API Response:', data);
 
           if (res.ok && data.user) {
-            setUserDetails(data.user);
-            
-            // Log role for debugging
-            if (data.user.role === 'admin' || data.user.role === 'super_admin') {
-              console.log('✅ Admin user detected:', data.user.role);
-            } else {
-              console.log('👤 Regular user:', data.user.role);
-            }
+            const mappedUser = {
+              _id: data.user._id,
+              username: data.user.username,
+              email: data.user.email,
+              role: data.user.role || null,   // ✅ force include role
+              favoriteProducts: data.user.favoriteProducts || [],
+              infoCompleted: data.user.infoCompleted,
+              registrationDate: data.user.registrationDate,
+              ratingAverage: data.user.ratingAverage,
+              profilePictureUrl: data.user.profilePictureUrl,
+              address: data.user.address,
+              bio: data.user.bio,
+            };
+
+            setUserDetails(mappedUser);
+            console.log('🎯 Setting userDetails to:', mappedUser);
           } else {
-            console.log('❌ Failed to get user details:', data.error);
+            console.log('❌ User not found or API error:', data.error);
             setUserDetails(null);
           }
         } catch (err) {
@@ -73,13 +79,21 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  useEffect(() => {
+    console.log('🔄 AuthContext State Update:');
+    console.log('- User exists:', !!user);
+    console.log('- Loading:', loading);
+    console.log('- UserDetails exists:', !!userDetails);
+    console.log('- UserDetails.role:', userDetails?.role);
+    console.log('- IsAdmin computed:', userDetails?.role === 'admin' || userDetails?.role === 'super_admin');
+  }, [user, loading, userDetails]);
+
   return (
     <AuthContext.Provider value={{ 
       user, 
       loading, 
       userDetails, 
       logout,
-      // Helper function to check if user is admin
       isAdmin: userDetails?.role === 'admin' || userDetails?.role === 'super_admin'
     }}>
       {children}

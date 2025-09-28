@@ -82,7 +82,9 @@ router.put('/:userId/updateProfile', async (req, res) => {
         bio: user.bio,
         address: user.address,
         profilePictureUrl: user.profilePictureUrl,
-        infoCompleted: user.infoCompleted
+        infoCompleted: user.infoCompleted,
+        role: user.role
+
       }
     });
   } catch (error) {

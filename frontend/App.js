@@ -9,16 +9,21 @@ import { ActivityIndicator, View, StyleSheet, Text } from "react-native";
 function MainApp() {
   const { userDetails, loading, user } = useAuth();
 
-  // Add detailed logging
-  console.log("🔍 MainApp Debug Info:");
-  console.log("- Loading:", loading);
-  console.log("- User exists:", !!user);
-  console.log("- UserDetails:", userDetails);
+  // Detailed logging for routing decision
+  console.log("🚀 MainApp Render - Detailed Debug:");
+  console.log("- Loading state:", loading);
+  console.log("- Firebase user exists:", !!user);
+  console.log("- Firebase user email:", user?.email);
+  console.log("- UserDetails exists:", !!userDetails);
+  console.log("- UserDetails object:", userDetails);
   console.log("- UserDetails.role:", userDetails?.role);
-  console.log("- Is admin check:", userDetails?.role === "admin");
+  console.log("- Role comparison result:", userDetails?.role === "admin");
+  console.log("- Super admin check:", userDetails?.role === "super_admin");
+  console.log("- Combined admin check:", userDetails?.role === "admin" || userDetails?.role === "super_admin");
 
   // Show loading screen while checking authentication
   if (loading) {
+    console.log("⏳ Showing loading screen");
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#2F6F61" />
@@ -27,26 +32,24 @@ function MainApp() {
     );
   }
 
-  // Debug: Show current state
-  if (__DEV__) {
-    console.log("🎯 Routing Decision:");
-    if (userDetails?.role === "admin") {
-      console.log("✅ Showing Admin Interface");
-    } else {
-      console.log("👤 Showing User Interface");
-      console.log("- Reason: role is", userDetails?.role);
-    }
+  // Check if user details exist
+  if (!userDetails) {
+    console.log("❌ No user details - showing login screen");
+    return <AppNavigator />;
   }
 
-  // If user is admin, show admin interface
-  if (userDetails?.role === "admin" || userDetails?.role === "super_admin") {
-    console.log("🔐 Rendering Admin Interface");
+  // Debug: Show routing decision
+  console.log("🎯 ROUTING DECISION:");
+  if (userDetails.role === "admin" || userDetails.role === "super_admin") {
+    console.log("✅ ROUTING TO ADMIN INTERFACE");
+    console.log("- Role:", userDetails.role);
     return <AdminNavigator />;
+  } else {
+    console.log("👤 ROUTING TO USER INTERFACE");
+    console.log("- Role:", userDetails.role);
+    console.log("- Why not admin: role is not 'admin' or 'super_admin'");
+    return <AppNavigator />;
   }
-
-  // Otherwise show regular user interface
-  console.log("👤 Rendering User Interface");
-  return <AppNavigator />;
 }
 
 export default function App() {
