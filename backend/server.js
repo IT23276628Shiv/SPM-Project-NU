@@ -14,6 +14,7 @@ import messageRoutes from './routes/message.js';
 import notificationRoutes from './routes/notifications.js';
 import favoritesRoute from './routes/favorite.js';
 import feedbackRoutes from './routes/feedback.js';
+import adminRoutes from './routes/admin.js';
 
 import { initializeSocket } from './socket/socketHandler.js';
 import { triggerMessageNotification, trackProductView } from './middleware/notificationTrigger.js';
@@ -73,7 +74,7 @@ app.use('/api/messages', triggerMessageNotification, messageRoutes); // trigger 
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/favorites', favoritesRoute);
 app.use('/api/feedback', feedbackRoutes);
-
+app.use('/api/admin', adminRoutes);
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({ error: 'Not Found' });
