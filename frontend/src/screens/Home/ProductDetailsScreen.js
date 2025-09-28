@@ -31,8 +31,40 @@ const theme = {
 export default function ProductDetailsScreen() {
   const route = useRoute();
   const navigation = useNavigation();
-  const { product } = route.params || {};
   const { user } = useAuth();
+
+  const [product, setProduct] = React.useState(route.params?.product || {});
+  const [loading, setLoading] = React.useState(true);
+
+  // Fetch fresh product data on mount
+  React.useEffect(() => {
+     if (!product?._id) return;
+    const fetchProduct = async () => {
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch(`${API_URL}/api/products/${product._id}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setProduct(data);
+        }
+      } catch (err) {
+        console.error("Failed to fetch product:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchProduct();
+  }, [product._id, user]);
+
+  // Derived state: check if user already requested to buy
+  const hasRequested = React.useMemo(() => {
+    return product.buyRequests?.some(
+      r => (r.buyerId === user?.uid || r.buyerId?._id === user?.uid) && r.status === "pending"
+    );
+  }, [product.buyRequests, user?.uid]);
 
   const formatPrice = (price) => {
     if (!price) return "N/A";
@@ -94,6 +126,36 @@ export default function ProductDetailsScreen() {
     }
   };
 
+  const handleBuy = async () => {
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch(`${API_URL}/api/products/${product._id}/buy`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        Alert.alert("Success", "Buy request sent successfully");
+
+        // Update local product state with new buy request
+        setProduct(prev => ({
+          ...prev,
+          buyRequests: [...(prev.buyRequests || []), { buyerId: user.uid, status: "pending" }]
+        }));
+      } else {
+        Alert.alert("Error", data.error || "Failed to send buy request");
+      }
+    } catch (error) {
+      console.error("Buy request error:", error);
+      Alert.alert("Error", "Something went wrong");
+    }
+  };
+
   const handleCall = () => {
     if (product.ownerContact) {
       const phoneUrl = `tel:${product.ownerContact}`;
@@ -109,6 +171,14 @@ export default function ProductDetailsScreen() {
       Alert.alert("Contact not available", "Seller contact information is not available");
     }
   };
+
+  if (loading) {
+    return (
+      <View style={styles.center}>
+        <Text>Loading product...</Text>
+      </View>
+    );
+  }
 
   if (!product) {
     return (
@@ -163,8 +233,14 @@ export default function ProductDetailsScreen() {
 
       {canEditOrBuySwap && !isOwner && (
         <View style={styles.buttonsContainer}>
-          <TouchableOpacity style={styles.buyBtn}>
-            <Text style={styles.buyBtnText}>Buy Now</Text>
+          <TouchableOpacity
+            style={[styles.buyBtn, hasRequested && { backgroundColor: theme.muted }]}
+            onPress={!hasRequested ? handleBuy : null}
+            disabled={hasRequested}
+          >
+            <Text style={styles.buyBtnText}>
+              {hasRequested ? "Buy Request Sent" : "Buy Now"}
+            </Text>
           </TouchableOpacity>
 
           {product.isForSwap && (
