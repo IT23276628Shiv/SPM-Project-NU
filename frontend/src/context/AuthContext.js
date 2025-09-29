@@ -1,4 +1,4 @@
-// frontend/src/context/AuthContext.js - UNIFIED VERSION
+// frontend/src/context/AuthContext.js - FIXED VERSION
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import authfirebase from '../../services/firebaseAuth';
@@ -36,22 +36,27 @@ export const AuthProvider = ({ children }) => {
           });
 
           const adminData = await adminRes.json();
-          console.log('🔐 Admin check response:', { status: adminRes.status, hasAdmin: !!adminData.admin });
+          console.log('🔐 Admin check response:', { 
+            status: adminRes.status, 
+            hasAdmin: !!adminData.admin,
+            role: adminData.admin?.role 
+          });
 
           if (adminRes.ok && adminData.admin) {
-            // User is an admin
+            // FIXED: User is an admin - set userType to 'admin' for BOTH admin and super_admin roles
             console.log('✅ ADMIN USER DETECTED');
             const mappedAdmin = {
               _id: adminData.admin._id,
               username: adminData.admin.username,
               email: adminData.admin.email,
               role: adminData.admin.role, // 'admin' or 'super_admin'
-              permissions: adminData.admin.permissions || adminData.admin.getDefaultPermissions?.() || [],
+              permissions: adminData.admin.permissions || [],
               isActive: adminData.admin.isActive,
               lastLoginDate: adminData.admin.lastLoginDate,
             };
 
             setUserDetails(mappedAdmin);
+            // FIXED: Set userType to 'admin' for both admin and super_admin
             setUserType('admin');
             console.log('🎯 Set userType to: admin');
             console.log('📦 Admin details:', mappedAdmin);
@@ -140,7 +145,7 @@ export const AuthProvider = ({ children }) => {
       user, 
       loading, 
       userDetails, 
-      userType, // 'user' or 'admin'
+      userType, // 'user' or 'admin' (admin includes both 'admin' and 'super_admin' roles)
       logout,
       isAdmin: userType === 'admin',
       isUser: userType === 'user',

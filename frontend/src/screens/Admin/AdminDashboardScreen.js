@@ -107,7 +107,7 @@ export default function AdminDashboardScreen() {
           </Text>
         </View>
         <TouchableOpacity
-          onPress={() => navigation.navigate('AdminProfile')}
+          onPress={() => navigation.navigate('Profile')}
           style={styles.profileButton}
         >
           <MaterialCommunityIcons name="account-circle" size={32} color="#2F6F61" />
@@ -128,14 +128,14 @@ export default function AdminDashboardScreen() {
             stats.totalUsers,
             'account-group',
             '#2F6F61',
-            () => navigation.navigate('AdminUsers')
+            () => navigation.navigate('Users')
           )}
           {renderStatCard(
             'Total Products',
             stats.totalProducts,
             'package-variant',
             '#FF6F61',
-            () => navigation.navigate('AdminProducts')
+            () => navigation.navigate('Products')
           )}
         </View>
 
@@ -145,7 +145,7 @@ export default function AdminDashboardScreen() {
             stats.totalComplaints,
             'alert-circle',
             '#FF9500',
-            () => navigation.navigate('AdminComplaints')
+            () => navigation.navigate('Complaints')
           )}
           {renderStatCard(
             'Feedback',
@@ -187,7 +187,7 @@ export default function AdminDashboardScreen() {
               'Manage Users',
               'account-group',
               '#2F6F61',
-              () => navigation.navigate('AdminUsers')
+              () => navigation.navigate('Users')
             )}
           
           {userDetails?.permissions?.includes('products_manage') &&
@@ -195,7 +195,7 @@ export default function AdminDashboardScreen() {
               'Manage Products',
               'package-variant',
               '#FF6F61',
-              () => navigation.navigate('AdminProducts')
+              () => navigation.navigate('Products')
             )}
 
           {userDetails?.permissions?.includes('complaints_manage') &&
@@ -203,7 +203,7 @@ export default function AdminDashboardScreen() {
               'Handle Complaints',
               'alert-circle',
               '#FF9500',
-              () => navigation.navigate('AdminComplaints')
+              () => navigation.navigate('Complaints')
             )}
 
           {userDetails?.permissions?.includes('feedback_view') &&
@@ -218,3 +218,152 @@ export default function AdminDashboardScreen() {
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f8f9fa',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f8f9fa',
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#666',
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    paddingHorizontal: 16,
+    paddingTop: 60,
+    paddingBottom: 20,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  subtitle: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 4,
+  },
+  profileButton: {
+    padding: 8,
+  },
+  content: {
+    flex: 1,
+    paddingHorizontal: 16,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+    marginTop: 20,
+    marginBottom: 12,
+  },
+  statsContainer: {
+    flexDirection: 'row',
+    marginBottom: 12,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    marginHorizontal: 6,
+    borderLeftWidth: 4,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  statContent: {
+    flex: 1,
+  },
+  statValue: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  statTitle: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 4,
+  },
+  statIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  activityContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  activityItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  activityText: {
+    fontSize: 14,
+    color: '#333',
+    marginLeft: 12,
+    flex: 1,
+  },
+  quickActionsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginBottom: 20,
+  },
+  quickAction: {
+    width: '48%',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    margin: '1%',
+    alignItems: 'center',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  quickActionIcon: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  quickActionText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+    textAlign: 'center',
+  },
+});

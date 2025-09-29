@@ -1,4 +1,4 @@
-// frontend/App.js - UNIFIED VERSION
+// frontend/App.js - FIXED VERSION
 import React from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -30,27 +30,25 @@ function MainApp() {
     );
   }
 
-  // Check if user details exist
-  if (!userDetails) {
-    console.log("❌ No user details - showing login screen");
+  // If no user is logged in, show auth screens
+  if (!user || !userDetails) {
+    console.log("❌ No user/userDetails - showing login screen");
     return <AppNavigator />;
   }
 
-  // UNIFIED ROUTING DECISION based on userType
+  // FIXED: Check if user is admin (either 'admin' or 'super_admin' userType)
   console.log("🎯 ROUTING DECISION:");
-  if (userType === 'admin' || userType === 'super_admin') {
+  const isAdmin = userType === 'admin' || userDetails?.role === 'admin' || userDetails?.role === 'super_admin';
+  
+  if (isAdmin) {
     console.log("✅ ROUTING TO ADMIN INTERFACE");
     console.log("- UserType:", userType);
     console.log("- Role:", userDetails.role);
     return <AdminNavigator />;
-  } else if (userType === 'user') {
+  } else {
     console.log("👤 ROUTING TO USER INTERFACE");
     console.log("- UserType:", userType);
     console.log("- Role:", userDetails.role);
-    return <AppNavigator />;
-  } else {
-    // Fallback - shouldn't happen
-    console.log("⚠️ UNKNOWN USER TYPE - showing login");
     return <AppNavigator />;
   }
 }
