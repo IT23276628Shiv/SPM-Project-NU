@@ -1,6 +1,3 @@
-
-
-// backend/middleware/adminAuth.js
 import admin from "../config/firebase.js";
 import Admin from "../models/Admin.js";
 
@@ -15,12 +12,21 @@ export async function adminAuthMiddleware(req, res, next) {
     const decodedToken = await admin.auth().verifyIdToken(token);
 
     // Find admin in MongoDB by firebaseUid
-    const adminDoc = await Admin.findOne({ firebaseUid: decodedToken.uid, isActive: true });
-    if (!adminDoc) return res.status(401).json({ error: "Admin not found or inactive" });
+    const adminDoc = await Admin.findOne({ 
+      firebaseUid: decodedToken.uid,
+      isActive: true 
+    });
+    
+    if (!adminDoc) {
+      return res.status(401).json({ error: "Admin access denied" });
+    }
 
+    // Attach admin info to request
     req.adminId = adminDoc._id;
+    req.adminEmail = adminDoc.email;
     req.adminRole = adminDoc.role;
     req.adminPermissions = adminDoc.permissions.length > 0 ? adminDoc.permissions : adminDoc.getDefaultPermissions();
+
     next();
   } catch (error) {
     console.error("Admin auth error:", error.message);
@@ -28,7 +34,6 @@ export async function adminAuthMiddleware(req, res, next) {
   }
 }
 
-// Permission checking middleware
 export function requirePermission(permission) {
   return (req, res, next) => {
     if (!req.adminPermissions || !req.adminPermissions.includes(permission)) {

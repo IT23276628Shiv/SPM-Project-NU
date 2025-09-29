@@ -1,3 +1,4 @@
+// frontend/src/screens/Admin/AdminProfileScreen.js - UPDATED FOR UNIFIED AUTH
 import React from 'react';
 import {
   View,
@@ -8,10 +9,10 @@ import {
   ScrollView
 } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import { useAdmin } from '../../context/AdminContext';
+import { useAuth } from '../../context/AuthContext'; // Using unified context
 
 export default function AdminProfileScreen({ navigation }) {
-  const { adminDetails, logout } = useAdmin();
+  const { userDetails, logout } = useAuth(); // Using unified context
 
   const handleLogout = () => {
     Alert.alert(
@@ -75,10 +76,10 @@ export default function AdminProfileScreen({ navigation }) {
           <View style={styles.avatarContainer}>
             <MaterialCommunityIcons name="account-circle" size={80} color="#2F6F61" />
           </View>
-          <Text style={styles.profileName}>{adminDetails?.username}</Text>
-          <Text style={styles.profileEmail}>{adminDetails?.email}</Text>
+          <Text style={styles.profileName}>{userDetails?.username}</Text>
+          <Text style={styles.profileEmail}>{userDetails?.email}</Text>
           <View style={styles.roleBadge}>
-            <Text style={styles.roleText}>{adminDetails?.role?.replace('_', ' ').toUpperCase()}</Text>
+            <Text style={styles.roleText}>{userDetails?.role?.replace('_', ' ').toUpperCase()}</Text>
           </View>
         </View>
 
@@ -86,18 +87,18 @@ export default function AdminProfileScreen({ navigation }) {
         <Text style={styles.sectionTitle}>Account Information</Text>
         {renderInfoCard(
           'Role', 
-          adminDetails?.role?.replace('_', ' ').toUpperCase() || 'N/A',
+          userDetails?.role?.replace('_', ' ').toUpperCase() || 'N/A',
           'shield-account'
         )}
         {renderInfoCard(
           'Permissions', 
-          adminDetails?.permissions?.length || 0,
+          userDetails?.permissions?.length || 0,
           'key'
         )}
         {renderInfoCard(
           'Last Login', 
-          adminDetails?.lastLoginDate 
-            ? new Date(adminDetails.lastLoginDate).toLocaleDateString()
+          userDetails?.lastLoginDate 
+            ? new Date(userDetails.lastLoginDate).toLocaleDateString()
             : 'Never',
           'clock'
         )}
@@ -105,7 +106,7 @@ export default function AdminProfileScreen({ navigation }) {
         {/* Permissions List */}
         <Text style={styles.sectionTitle}>Permissions</Text>
         <View style={styles.permissionsContainer}>
-          {adminDetails?.permissions?.map(permission => (
+          {userDetails?.permissions?.map(permission => (
             <View key={permission} style={styles.permissionItem}>
               <MaterialCommunityIcons name="check-circle" size={16} color="#4CAF50" />
               <Text style={styles.permissionText}>
@@ -149,7 +150,6 @@ export default function AdminProfileScreen({ navigation }) {
   );
 }
 
-// Complete styles for all admin screens
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -173,232 +173,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#333',
   },
-  filterContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-  },
-  filterButton: {
-    backgroundColor: '#f0f0f0',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    marginRight: 8,
-  },
-  activeFilter: {
-    backgroundColor: '#2F6F61',
-  },
-  filterText: {
-    fontSize: 12,
-    color: '#666',
-    fontWeight: '500',
-  },
-  activeFilterText: {
-    color: '#fff',
-    fontWeight: '600',
-  },
-  // Product screen styles
-  productItem: {
-    backgroundColor: '#fff',
-    flexDirection: 'row',
-    padding: 16,
-    marginHorizontal: 16,
-    marginVertical: 4,
-    borderRadius: 12,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 1,
-  },
-  productImage: {
-    width: 60,
-    height: 60,
-    borderRadius: 8,
-    backgroundColor: '#f0f0f0',
-  },
-  productInfo: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  productTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 4,
-  },
-  productPrice: {
-    fontSize: 14,
-    color: '#2F6F61',
-    fontWeight: '600',
-    marginBottom: 2,
-  },
-  productOwner: {
-    fontSize: 12,
-    color: '#666',
-    marginBottom: 8,
-  },
-  productMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 12,
-  },
-  statusText: {
-    fontSize: 10,
-    color: '#fff',
-    fontWeight: '600',
-  },
-  productDate: {
-    fontSize: 11,
-    color: '#999',
-  },
-  productActions: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  actionButton: {
-    backgroundColor: '#e8f5f0',
-    padding: 8,
-    borderRadius: 8,
-    marginBottom: 8,
-  },
-  // Complaint screen styles
-  complaintItem: {
-    backgroundColor: '#fff',
-    padding: 16,
-    marginHorizontal: 16,
-    marginVertical: 4,
-    borderRadius: 12,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 1,
-  },
-  complaintHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 8,
-  },
-  complaintInfo: {
-    flex: 1,
-  },
-  complaintTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 4,
-  },
-  complaintUser: {
-    fontSize: 12,
-    color: '#666',
-  },
-  complaintDescription: {
-    fontSize: 14,
-    color: '#555',
-    lineHeight: 20,
-    marginBottom: 12,
-  },
-  complaintMeta: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  complaintDate: {
-    fontSize: 12,
-    color: '#999',
-  },
-  complaintProduct: {
-    fontSize: 12,
-    color: '#2F6F61',
-  },
-  complaintActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-  },
-  actionButtonText: {
-    fontSize: 12,
-    color: '#2F6F61',
-    fontWeight: '600',
-  },
-  resolveButton: {
-    backgroundColor: '#2F6F61',
-    marginLeft: 8,
-  },
-  // Modal styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContent: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 20,
-    width: '90%',
-    maxWidth: 400,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
-  },
-  modalLabel: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#333',
-    marginBottom: 8,
-  },
-  modalTextInput: {
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    color: '#333',
-    marginBottom: 16,
-    minHeight: 100,
-  },
-  modalActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-  },
-  modalCancelButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    marginRight: 12,
-  },
-  modalCancelText: {
-    color: '#666',
-    fontWeight: '500',
-  },
-  modalResolveButton: {
-    backgroundColor: '#2F6F61',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 6,
-  },
-  modalResolveText: {
-    color: '#fff',
-    fontWeight: '600',
-  },
-  // Profile screen styles
   content: {
     flex: 1,
   },
@@ -529,16 +303,5 @@ const styles = StyleSheet.create({
     color: '#666',
     textAlign: 'center',
     lineHeight: 18,
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 60,
-  },
-  emptyText: {
-    fontSize: 16,
-    color: '#666',
-    marginTop: 16,
   },
 });

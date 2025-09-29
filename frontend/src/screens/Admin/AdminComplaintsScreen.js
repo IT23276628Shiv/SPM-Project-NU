@@ -11,11 +11,11 @@ import {
   TextInput
 } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import { useAdmin } from '../../context/AdminContext';
+import { useAuth } from '../../context/AuthContext';
 import { API_URL } from '../../constants/config';
 
 export default function AdminComplaintsScreen({ navigation }) {
-  const { admin } = useAdmin();
+  const { user } = useAuth();
   
   const [complaints, setComplaints] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -28,7 +28,7 @@ export default function AdminComplaintsScreen({ navigation }) {
   const fetchComplaints = async () => {
     try {
       setLoading(true);
-      const token = await admin.getIdToken();
+      const token = await user.getIdToken();
       
       let url = `${API_URL}/api/admin/complaints?limit=50`;
       if (filter !== 'all') url += `&status=${filter}`;
@@ -52,7 +52,7 @@ export default function AdminComplaintsScreen({ navigation }) {
 
   const updateComplaintStatus = async (complaintId, status, notes = '') => {
     try {
-      const token = await admin.getIdToken();
+      const token = await user.getIdToken();
       const response = await fetch(`${API_URL}/api/admin/complaints/${complaintId}`, {
         method: 'PUT',
         headers: {

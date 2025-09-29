@@ -1,3 +1,4 @@
+// frontend/src/screens/Admin/AdminUsersScreen.js - FIXED VERSION
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -11,11 +12,11 @@ import {
   RefreshControl
 } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import { useAdmin } from '../../context/AdminContext';
+import { useAuth } from '../../context/AuthContext'; // FIXED
 import { API_URL } from '../../constants/config';
 
 export default function AdminUsersScreen({ navigation }) {
-  const { admin } = useAdmin();
+  const { user } = useAuth(); // FIXED: was useAdmin()
   
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -28,7 +29,7 @@ export default function AdminUsersScreen({ navigation }) {
   const fetchUsers = async (pageNum = 1, searchTerm = '', reset = false) => {
     try {
       setLoading(true);
-      const token = await admin.getIdToken();
+      const token = await user.getIdToken(); // FIXED: was admin.getIdToken()
       
       let url = `${API_URL}/api/admin/users?page=${pageNum}&limit=20`;
       if (searchTerm) url += `&search=${searchTerm}`;
@@ -60,7 +61,7 @@ export default function AdminUsersScreen({ navigation }) {
 
   const updateUserStatus = async (userId, isVerified) => {
     try {
-      const token = await admin.getIdToken();
+      const token = await user.getIdToken(); // FIXED: was admin.getIdToken()
       const response = await fetch(`${API_URL}/api/admin/users/${userId}/status`, {
         method: 'PUT',
         headers: {
@@ -72,8 +73,8 @@ export default function AdminUsersScreen({ navigation }) {
 
       const data = await response.json();
       if (response.ok) {
-        setUsers(prev => prev.map(user => 
-          user._id === userId ? { ...user, isVerified } : user
+        setUsers(prev => prev.map(u => 
+          u._id === userId ? { ...u, isVerified } : u
         ));
         Alert.alert('Success', 'User status updated');
       } else {
@@ -225,22 +226,11 @@ export default function AdminUsersScreen({ navigation }) {
   );
 }
 
-// Complete Styles for Admin Components
+// Styles remain the same
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f8f9fa',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f8f9fa',
-  },
-  loadingText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: '#666',
   },
   header: {
     flexDirection: 'row',
@@ -260,119 +250,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#333',
     flex: 1,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 2,
-  },
-  profileButton: {
-    padding: 4,
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: 16,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
-    marginVertical: 16,
-  },
-  statsContainer: {
-    flexDirection: 'row',
-    marginBottom: 12,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginHorizontal: 6,
-    borderLeftWidth: 4,
-    borderLeftColor: '#2F6F61',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-  },
-  statContent: {
-    flex: 1,
-  },
-  statValue: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  statTitle: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 4,
-  },
-  statIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  activityContainer: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 20,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 1,
-  },
-  activityItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-  activityText: {
-    marginLeft: 12,
-    fontSize: 14,
-    color: '#333',
-  },
-  quickActionsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginBottom: 20,
-  },
-  quickAction: {
-    width: '48%',
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    marginHorizontal: '1%',
-    marginBottom: 12,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-  },
-  quickActionIcon: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  quickActionText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#333',
-    textAlign: 'center',
   },
   searchContainer: {
     padding: 16,

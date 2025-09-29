@@ -11,11 +11,11 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import { useAdmin } from '../../context/AdminContext';
+import { useAuth } from '../../context/AuthContext';
 import { API_URL } from '../../constants/config';
 
 export default function AdminDashboardScreen() {
-  const { admin, adminDetails } = useAdmin();
+  const { user, userDetails } = useAuth();
   const navigation = useNavigation();
   
   const [stats, setStats] = useState({
@@ -32,7 +32,7 @@ export default function AdminDashboardScreen() {
 
   const fetchStats = async () => {
     try {
-      const token = await admin.getIdToken();
+      const token = await user.getIdToken();
       const response = await fetch(`${API_URL}/api/admin/dashboard/stats`, {
         headers: {
           'Authorization': `Bearer ${token}`
@@ -59,10 +59,10 @@ export default function AdminDashboardScreen() {
   };
 
   useEffect(() => {
-    if (admin) {
+    if (user) {
       fetchStats();
     }
-  }, [admin]);
+  }, [user]);
 
   const renderStatCard = (title, value, icon, color, onPress) => (
     <TouchableOpacity 
@@ -103,7 +103,7 @@ export default function AdminDashboardScreen() {
         <View>
           <Text style={styles.headerTitle}>Admin Dashboard</Text>
           <Text style={styles.subtitle}>
-            Welcome back, {adminDetails?.username} ({adminDetails?.role})
+            Welcome back, {userDetails?.username} ({userDetails?.role})
           </Text>
         </View>
         <TouchableOpacity
@@ -182,7 +182,7 @@ export default function AdminDashboardScreen() {
         {/* Quick Actions */}
         <Text style={styles.sectionTitle}>Quick Actions</Text>
         <View style={styles.quickActionsContainer}>
-          {adminDetails?.permissions?.includes('users_manage') &&
+          {userDetails?.permissions?.includes('users_manage') &&
             renderQuickAction(
               'Manage Users',
               'account-group',
@@ -190,7 +190,7 @@ export default function AdminDashboardScreen() {
               () => navigation.navigate('AdminUsers')
             )}
           
-          {adminDetails?.permissions?.includes('products_manage') &&
+          {userDetails?.permissions?.includes('products_manage') &&
             renderQuickAction(
               'Manage Products',
               'package-variant',
@@ -198,7 +198,7 @@ export default function AdminDashboardScreen() {
               () => navigation.navigate('AdminProducts')
             )}
 
-          {adminDetails?.permissions?.includes('complaints_manage') &&
+          {userDetails?.permissions?.includes('complaints_manage') &&
             renderQuickAction(
               'Handle Complaints',
               'alert-circle',
@@ -206,7 +206,7 @@ export default function AdminDashboardScreen() {
               () => navigation.navigate('AdminComplaints')
             )}
 
-          {adminDetails?.permissions?.includes('feedback_view') &&
+          {userDetails?.permissions?.includes('feedback_view') &&
             renderQuickAction(
               'View Feedback',
               'message-text',

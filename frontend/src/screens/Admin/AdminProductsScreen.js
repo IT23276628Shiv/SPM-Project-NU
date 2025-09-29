@@ -11,11 +11,11 @@ import {
   Image
 } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import { useAdmin } from '../../context/AdminContext';
+import { useAuth } from '../../context/AuthContext';
 import { API_URL } from '../../constants/config';
 
 export default function AdminProductsScreen({ navigation }) {
-  const { admin } = useAdmin();
+  const { user } = useAdmin();
   
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -27,7 +27,7 @@ export default function AdminProductsScreen({ navigation }) {
   const fetchProducts = async (pageNum = 1, reset = false) => {
     try {
       setLoading(true);
-      const token = await admin.getIdToken();
+      const token = await user.getIdToken();
       
       let url = `${API_URL}/api/admin/products?page=${pageNum}&limit=20`;
       if (filter !== 'all') url += `&status=${filter}`;
@@ -57,7 +57,7 @@ export default function AdminProductsScreen({ navigation }) {
 
   const updateProductStatus = async (productId, status) => {
     try {
-      const token = await admin.getIdToken();
+      const token = await user.getIdToken();
       const response = await fetch(`${API_URL}/api/admin/products/${productId}/status`, {
         method: 'PUT',
         headers: {
@@ -89,7 +89,7 @@ export default function AdminProductsScreen({ navigation }) {
           style: 'destructive',
           onPress: async () => {
             try {
-              const token = await admin.getIdToken();
+              const token = await user.getIdToken();
               const response = await fetch(`${API_URL}/api/admin/products/${productId}`, {
                 method: 'DELETE',
                 headers: {

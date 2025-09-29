@@ -1,9 +1,10 @@
+// frontend/src/navigation/AdminNavigator.js - UPDATED FOR UNIFIED AUTH
 import React from "react";
 import { ActivityIndicator, View, StyleSheet } from "react-native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
-import { useAdmin } from "../context/AdminContext";
+import { useAuth } from "../context/AuthContext"; // Using unified context now
 
 // Import admin screens
 import AdminDashboardScreen from "../screens/Admin/AdminDashboardScreen.js";
@@ -76,13 +77,13 @@ function AdminTabs() {
 
 // Admin Navigator
 export default function AdminNavigator() {
-  const { admin, loading } = useAdmin();
+  const { user, loading } = useAuth(); // Using unified context
 
   if (loading) return <LoadingScreen />;
 
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      {!admin ? (
+      {!user ? (
         <>
           <Stack.Screen name="Welcome" component={WelcomeScreen} />
           <Stack.Screen name="Login" component={LoginScreen} />
