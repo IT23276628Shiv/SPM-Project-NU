@@ -327,5 +327,180 @@ router.get('/feedback', adminAuthMiddleware, requirePermission('feedback_view'),
     res.status(500).json({ error: 'Failed to get feedback' });
   }
 });
+// ==============================
+// Dashboard Analytics
+// ==============================
+router.get('/dashboard/analytics', adminAuthMiddleware, requirePermission('analytics_view'), async (req, res) => {
+  try {
+    const { days = 7 } = req.query;
+    const sinceDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+    // 📈 User Growth (new users per day)
+    const userGrowth = await User.aggregate([
+      { $match: { createdAt: { $gte: sinceDate } } },
+      {
+        $group: {
+          _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+          count: { $sum: 1 }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]);
+
+    // 📦 Product Trends (recent products grouped by categoryId)
+    const productTrends = await Product.aggregate([
+      { $match: { createdAt: { $gte: sinceDate } } },
+      {
+        $group: {
+          _id: "$categoryId",
+          count: { $sum: 1 }
+        }
+      },
+      { $sort: { count: -1 } },
+      { $limit: 10 }
+    ]);
+
+    // 🎯 Conversion Funnel (simplified)
+    const totalUsers = await User.countDocuments();
+    const totalProducts = await Product.countDocuments();
+    const totalComplaints = await Complaint.countDocuments();
+    const totalFeedback = await Feedback.countDocuments();
+
+    const conversionFunnel = {
+      users: totalUsers,
+      listings: totalProducts,
+      complaints: totalComplaints,
+      feedback: totalFeedback
+    };
+
+    // 🌍 Geographic Distribution (from User.address)
+    const geographicDistribution = await User.aggregate([
+      { $match: { address: { $exists: true, $ne: "" } } },
+      {
+        $group: {
+          _id: "$address", // e.g., city or region
+          users: { $sum: 1 }
+        }
+      },
+      { $sort: { users: -1 } },
+      { $limit: 10 }
+    ]);
+
+    // ⏰ Peak Hours (based on lastLoginDate)
+    const peakHours = await User.aggregate([
+      { $match: { lastLoginDate: { $exists: true } } },
+      {
+        $group: {
+          _id: { $hour: "$lastLoginDate" },
+          active: { $sum: 1 }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]);
+
+    res.json({
+      analytics: {
+        userGrowth: userGrowth.map(u => ({ label: u._id, value: u.count })),
+        productTrends: productTrends.map(p => ({
+          category: p._id ? p._id.toString() : "Unknown",
+          count: p.count
+        })),
+        conversionFunnel,
+        geographicDistribution: geographicDistribution.map(g => ({
+          region: g._id,
+          users: g.users
+        })),
+        peakHours: peakHours.map(h => ({
+          hour: `${h._id}:00`,
+          active: h.active
+        }))
+      }
+    });
+  } catch (error) {
+    console.error("Dashboard analytics error:", error);
+    res.status(500).json({ error: "Failed to get analytics" });
+  }
+});
+
+// ==============================
+// Recent Activity
+// ==============================
+router.get('/dashboard/activity', adminAuthMiddleware, async (req, res) => {
+  try {
+    const { limit = 10 } = req.query;
+
+    const users = await User.find()
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .select("username createdAt");
+
+    const products = await Product.find()
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .select("title createdAt");
+
+    const complaints = await Complaint.find()
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .select("status createdAt");
+
+    const feedback = await Feedback.find()
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .select("type createdAt");
+
+    const activities = [
+      ...users.map(u => ({
+        type: "user_registered",
+        description: `New user: ${u.username}`,
+        timestamp: u.createdAt
+      })),
+      ...products.map(p => ({
+        type: "product_listed",
+        description: `New product: ${p.title}`,
+        timestamp: p.createdAt
+      })),
+      ...complaints.map(c => ({
+        type: "complaint_filed",
+        description: `Complaint status: ${c.status}`,
+        timestamp: c.createdAt
+      })),
+      ...feedback.map(f => ({
+        type: "feedback_submitted",
+        description: `Feedback received: ${f.type}`,
+        timestamp: f.createdAt
+      }))
+    ]
+      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+      .slice(0, limit);
+
+    res.json({ activities });
+  } catch (error) {
+    console.error("Dashboard activity error:", error);
+    res.status(500).json({ error: "Failed to get recent activity" });
+  }
+});
+
+// ==============================
+// System Health
+// ==============================
+router.get('/dashboard/health', adminAuthMiddleware, async (req, res) => {
+  try {
+    const start = Date.now();
+    await mongoose.connection.db.admin().ping(); // real DB check
+    const responseTime = Date.now() - start;
+
+    const health = {
+      serverStatus: "healthy",
+      responseTime,
+      uptime: process.uptime()
+    };
+
+    res.json({ health });
+  } catch (error) {
+    console.error("Dashboard health error:", error);
+    res.status(500).json({ error: "Failed to get system health" });
+  }
+});
 
 export default router;
