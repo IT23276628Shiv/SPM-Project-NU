@@ -1,3 +1,4 @@
+// frontend/App.js - FIXED VERSION
 import React from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -7,7 +8,7 @@ import AdminNavigator from "./src/navigation/AdminNavigator";
 import { ActivityIndicator, View, StyleSheet, Text } from "react-native";
 
 function MainApp() {
-  const { userDetails, loading, user } = useAuth();
+  const { userDetails, loading, user, userType } = useAuth();
 
   // Detailed logging for routing decision
   console.log("🚀 MainApp Render - Detailed Debug:");
@@ -15,11 +16,8 @@ function MainApp() {
   console.log("- Firebase user exists:", !!user);
   console.log("- Firebase user email:", user?.email);
   console.log("- UserDetails exists:", !!userDetails);
-  console.log("- UserDetails object:", userDetails);
+  console.log("- UserType:", userType);
   console.log("- UserDetails.role:", userDetails?.role);
-  console.log("- Role comparison result:", userDetails?.role === "admin");
-  console.log("- Super admin check:", userDetails?.role === "super_admin");
-  console.log("- Combined admin check:", userDetails?.role === "admin" || userDetails?.role === "super_admin");
 
   // Show loading screen while checking authentication
   if (loading) {
@@ -32,22 +30,25 @@ function MainApp() {
     );
   }
 
-  // Check if user details exist
-  if (!userDetails) {
-    console.log("❌ No user details - showing login screen");
+  // If no user is logged in, show auth screens
+  if (!user || !userDetails) {
+    console.log("❌ No user/userDetails - showing login screen");
     return <AppNavigator />;
   }
 
-  // Debug: Show routing decision
+  // FIXED: Check if user is admin (either 'admin' or 'super_admin' userType)
   console.log("🎯 ROUTING DECISION:");
-  if (userDetails.role === "admin" || userDetails.role === "super_admin") {
+  const isAdmin = userType === 'admin' || userDetails?.role === 'admin' || userDetails?.role === 'super_admin';
+  
+  if (isAdmin) {
     console.log("✅ ROUTING TO ADMIN INTERFACE");
+    console.log("- UserType:", userType);
     console.log("- Role:", userDetails.role);
     return <AdminNavigator />;
   } else {
     console.log("👤 ROUTING TO USER INTERFACE");
+    console.log("- UserType:", userType);
     console.log("- Role:", userDetails.role);
-    console.log("- Why not admin: role is not 'admin' or 'super_admin'");
     return <AppNavigator />;
   }
 }
