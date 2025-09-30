@@ -13,10 +13,17 @@ export async function authMiddleware(req, res, next) {
 
     // Find user in MongoDB by firebaseUid
     const userDoc = await User.findOne({ firebaseUid: decodedToken.uid });
-    if (!userDoc) return res.status(401).json({ error: "User not found" });
+    
+    if (!userDoc) {
+      return res.status(401).json({ error: "User not found" });
+    }
 
-    req.userId = userDoc._id; // MongoDB ObjectId
-    req.userEmail = userDoc.email; // optional
+    // Attach user info to request
+    req.userId = userDoc._id;
+    req.userEmail = userDoc.email;
+    req.userRole = userDoc.role; // Add role to request
+    req.isAdmin = userDoc.role === 'admin' || userDoc.role === 'super_admin';
+
     next();
   } catch (error) {
     console.error("Auth error:", error.message);

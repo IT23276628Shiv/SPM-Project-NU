@@ -1,4 +1,4 @@
-// context/AuthContext.js
+// frontend/src/context/AuthContext.js - FIXED VERSION
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import authfirebase from '../../services/firebaseAuth';
@@ -10,51 +10,146 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [userDetails, setUserDetails] = useState(null);
+  const [userType, setUserType] = useState(null); // 'user' or 'admin'
 
   useEffect(() => {
-  const unsubscribe = onAuthStateChanged(authfirebase, async (firebaseUser) => {
-    if (firebaseUser) {
-      setUser(firebaseUser);
+    const unsubscribe = onAuthStateChanged(authfirebase, async (firebaseUser) => {
+      console.log('🔍 Firebase auth state changed:');
+      console.log('- Email:', firebaseUser?.email);
+      console.log('- UID:', firebaseUser?.uid);
+      
+      if (firebaseUser) {
+        setUser(firebaseUser);
 
-      try {
-        // Get Firebase ID token
-        const token = await firebaseUser.getIdToken();
+        try {
+          const token = await firebaseUser.getIdToken();
+          console.log('🎫 Got Firebase token, checking user type...');
 
-        const res = await fetch(`${API_URL}/api/auth/user/${firebaseUser.uid}`, {
-          headers: {
-            'Authorization': `Bearer ${token}`,  // <-- send token
-          },
-        });
+          // STEP 1: Try Admin collection first
+          console.log('🔐 Checking Admin collection...');
+          const adminRes = await fetch(`${API_URL}/api/admin/login`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ firebaseUid: firebaseUser.uid }),
+          });
 
-        const data = await res.json();
-        setUserDetails(data.user); // note: your backend returns { user: {...} }
-      } catch (err) {
-        console.log("Error fetching user details:", err);
+          const adminData = await adminRes.json();
+          console.log('🔐 Admin check response:', { 
+            status: adminRes.status, 
+            hasAdmin: !!adminData.admin,
+            role: adminData.admin?.role 
+          });
+
+          if (adminRes.ok && adminData.admin) {
+            // FIXED: User is an admin - set userType to 'admin' for BOTH admin and super_admin roles
+            console.log('✅ ADMIN USER DETECTED');
+            const mappedAdmin = {
+              _id: adminData.admin._id,
+              username: adminData.admin.username,
+              email: adminData.admin.email,
+              role: adminData.admin.role, // 'admin' or 'super_admin'
+              permissions: adminData.admin.permissions || [],
+              isActive: adminData.admin.isActive,
+              lastLoginDate: adminData.admin.lastLoginDate,
+            };
+
+            setUserDetails(mappedAdmin);
+            // FIXED: Set userType to 'admin' for both admin and super_admin
+            setUserType('admin');
+            console.log('🎯 Set userType to: admin');
+            console.log('📦 Admin details:', mappedAdmin);
+            setLoading(false);
+            return; // Exit early - don't check User collection
+          }
+
+          // STEP 2: Check User collection
+          console.log('👤 Checking User collection...');
+          const userRes = await fetch(`${API_URL}/api/auth/user/${firebaseUser.uid}`, {
+            headers: { 'Authorization': `Bearer ${token}` },
+          });
+
+          console.log('👤 User check response:', userRes.status, userRes.ok);
+          const userData = await userRes.json();
+          console.log('📦 User data:', userData);
+
+          if (userRes.ok && userData.user) {
+            // Regular user
+            console.log('✅ REGULAR USER DETECTED');
+            const mappedUser = {
+              _id: userData.user._id,
+              username: userData.user.username,
+              email: userData.user.email,
+              role: userData.user.role || 'user',
+              favoriteProducts: userData.user.favoriteProducts || [],
+              infoCompleted: userData.user.infoCompleted,
+              registrationDate: userData.user.registrationDate,
+              ratingAverage: userData.user.ratingAverage,
+              profilePictureUrl: userData.user.profilePictureUrl,
+              address: userData.user.address,
+              bio: userData.user.bio,
+            };
+
+            setUserDetails(mappedUser);
+            setUserType('user');
+            console.log('🎯 Set userType to: user');
+            console.log('📦 User details:', mappedUser);
+          } else {
+            console.log('❌ User not found in either collection');
+            setUserDetails(null);
+            setUserType(null);
+          }
+        } catch (err) {
+          console.error("💥 Error fetching user details:", err);
+          setUserDetails(null);
+          setUserType(null);
+        }
+      } else {
+        console.log('🚪 User logged out');
+        setUser(null);
+        setUserDetails(null);
+        setUserType(null);
       }
+      setLoading(false);
+    });
 
-    } else {
-      setUser(null);
-      setUserDetails(null);
-    }
-    setLoading(false);
-  });
-
-  return () => unsubscribe();
-}, []);
-
+    return () => unsubscribe();
+  }, []);
 
   const logout = async () => {
     try {
       await signOut(authfirebase);
       setUser(null);
       setUserDetails(null);
+      setUserType(null);
+      console.log('✅ Logged out successfully');
     } catch (err) {
-      console.log("Logout error:", err);
+      console.log("❌ Logout error:", err);
     }
   };
 
+  // Log state changes for debugging
+  useEffect(() => {
+    console.log('🔄 AuthContext State Update:');
+    console.log('- User exists:', !!user);
+    console.log('- Loading:', loading);
+    console.log('- UserDetails exists:', !!userDetails);
+    console.log('- UserType:', userType);
+    console.log('- UserDetails.role:', userDetails?.role);
+    console.log('- IsAdmin computed:', userType === 'admin');
+  }, [user, loading, userDetails, userType]);
+
   return (
-    <AuthContext.Provider value={{ user, loading, userDetails, logout }}>
+    <AuthContext.Provider value={{ 
+      user, 
+      loading, 
+      userDetails, 
+      userType, // 'user' or 'admin' (admin includes both 'admin' and 'super_admin' roles)
+      logout,
+      isAdmin: userType === 'admin',
+      isUser: userType === 'user',
+    }}>
       {children}
     </AuthContext.Provider>
   );
