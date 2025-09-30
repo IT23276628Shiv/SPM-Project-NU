@@ -251,6 +251,7 @@ router.delete("/:id", authMiddleware, async (req, res) => {
   }
 });
 
+
 // Create buy request
 router.post("/:id/buy", authMiddleware, async (req, res) => {
   try {
@@ -261,8 +262,6 @@ router.post("/:id/buy", authMiddleware, async (req, res) => {
     const alreadyRequested = product.buyRequests.some(
       r => r.buyerId.toString() === req.userId
     );
-    console.log("Already requested:", alreadyRequested);
-
     if (alreadyRequested) {
       return res.status(400).json({ error: "You have already sent a buy request" });
     }
@@ -280,6 +279,7 @@ router.post("/:id/buy", authMiddleware, async (req, res) => {
   }
 });
 
+
 // Get single product by ID
 router.get("/:id", async (req, res) => {
   try {
@@ -294,12 +294,96 @@ router.get("/:id", async (req, res) => {
       ownerName: product.ownerId?.username || "Unknown",
       ownerContact: product.ownerId?.phoneNumber || "Unknown",
       categoryName: product.categoryId?.name || "Unknown",
+      buyRequests: (product.buyRequests || []).map(r => ({
+        _id: r._id,
+        status: r.status,
+        date: r.date,
+        buyerFirebaseId: r.buyerId,   // Firebase UID
+      })),
+      swapRequests: product.swapRequests || [],
     });
   } catch (err) {
-    console.error(err);
+    console.error("Get product error:", err);
     res.status(500).json({ error: "Failed to fetch product" });
   }
 });
+
+
+// Cancel a buy request (buyer only)
+router.patch("/:id/buy/:requestId/cancel", authMiddleware, async (req, res) => {
+  try {
+    const { id: productId, requestId } = req.params;
+    const product = await Product.findById(productId);
+    if (!product) return res.status(404).json({ error: "Product not found" });
+
+    const request = product.buyRequests.id(requestId);
+    if (!request) return res.status(404).json({ error: "Buy request not found" });
+
+    // Only buyer can cancel
+    if (request.buyerId !== req.userId) {
+      return res.status(403).json({ error: "You are not authorized to cancel this request" });
+    }
+
+    request.status = "cancelled";
+    await product.save();
+
+    res.json({ message: "Buy request cancelled", request });
+  } catch (err) {
+    console.error("Cancel buy error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// Respond to a buy request (seller only: accept/reject)
+router.patch("/:productId/buy/:requestId/respond", authMiddleware, async (req, res) => {
+  try {
+    const { productId, requestId } = req.params;
+    const { status } = req.body; // accepted / rejected
+
+    // Find product and populate ownerId
+    const product = await Product.findById(productId).populate("ownerId", "_id firebaseUid");
+    if (!product) return res.status(404).json({ error: "Product not found" });
+
+    // Find the buy request
+    const request = product.buyRequests.id(requestId);
+    if (!request) return res.status(404).json({ error: "Buy request not found" });
+
+    // 🔹 Authorization check: compare strings
+    const ownerIdStr = product.ownerId._id.toString();
+    const userIdStr = req.userId.toString();
+
+    if (ownerIdStr !== userIdStr) {
+      console.log("Backend auth failed:", {
+        productOwner: ownerIdStr,
+        reqUserId: userIdStr
+      });
+      return res.status(403).json({ error: "You are not authorized to respond to this request" });
+    }
+
+    // Update buy request status
+    request.status = status;
+
+    // Mark product as sold if accepted
+    if (status === "accepted") {
+      product.status = "sold";
+    }
+
+    await product.save();
+
+    console.log("Buy request responded successfully:", {
+      requestId,
+      status,
+      productId,
+      sellerId: userIdStr
+    });
+
+    res.json({ message: "Buy request updated", request, product });
+  } catch (err) {
+    console.error("Respond buy error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 
 
 
