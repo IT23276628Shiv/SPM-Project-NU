@@ -188,61 +188,49 @@ export default function MyActivityScreen() {
     </TouchableOpacity>
   );
 
-const fetchBuyRequests = async () => {
-  try {
-    const res = await axios.get(`${API_URL}/api/products?all=true`);
-    const allProducts = res.data || [];
+  const fetchBuyRequests = async () => {
+    try {
+      const res = await axios.get(`${API_URL}/api/products/buy-requests`);
+      const allProducts = res.data || [];
 
-    const requests = [];
+      const requests = [];
 
-    allProducts.forEach((product) => {
-      if (!product.buyRequests?.length) return;
+      allProducts.forEach((product) => {
+        if (!product.buyRequests?.length) return;
 
-      const sellerId = String(product.ownerId?.firebaseUid || "").trim();
-
-      product.buyRequests.forEach((req) => {
-        // Keep buyerId as it is from DB
-        const buyerId = req.buyerId ? String(req.buyerId).trim() : null;
-
-        requests.push({
-          _id: req._id,
-          status: req.status,
-          buyerId,
-          sellerId,
-          product,
+        product.buyRequests.forEach((req) => {
+          // Use backend-provided fields directly
+          requests.push({
+            _id: req._id,
+            status: req.status,
+            buyerId: req.buyerId,
+            buyerName: req.buyerName,
+            buyerContact: req.buyerContact,
+            sellerId: req.sellerId,
+            sellerName: req.sellerName,
+            sellerContact: req.sellerContact,
+            product,
+          });
         });
       });
-    });
 
-    // Sort pending first
-    const statusOrder = { pending: 1, accepted: 2, rejected: 3, cancelled: 4 };
-    requests.sort((a, b) => (statusOrder[a.status] || 99) - (statusOrder[b.status] || 99));
+      // Sort pending first
+      const statusOrder = { pending: 1, accepted: 2, rejected: 3, cancelled: 4 };
+      requests.sort((a, b) => (statusOrder[a.status] || 99) - (statusOrder[b.status] || 99));
 
-    // Filter requests relevant to current user:
-    // - Either user is seller (Firebase UID)
-    // - Or user is buyer (match with DB user ID from profile)
-    // Assuming you have user.dbId stored in your AuthContext or user profile
-    const currentUserDbId = user.dbId || user.uid; // fallback to uid if dbId unavailable
-    const filtered = requests.filter(
-      r => r.sellerId === String(user.uid).trim() || r.buyerId === String(currentUserDbId).trim()
-    );
+      // Filter requests relevant to the current user
+      const currentUserDbId = user.dbId || user.uid;
+      const filtered = requests.filter(
+        r => r.sellerId === String(user.uid).trim() || r.buyerId === String(currentUserDbId).trim()
+      );
 
-    // console.log("Filtered buy requests:", filtered.map(r => ({
-    //   product: r.product.title,
-    //   buyerId: r.buyerId,
-    //   sellerId: r.sellerId,
-    //   status: r.status,
-    //   userUID: user.uid,
-    //   userDbId: currentUserDbId,
-    // })));
+      setBuyRequests(filtered);
 
-    setBuyRequests(filtered);
-
-  } catch (err) {
-    console.log("Error fetching buy requests:", err.response?.data || err.message);
-    setBuyRequests([]);
-  }
-};
+    } catch (err) {
+      console.log("Error fetching buy requests:", err.response?.data || err.message);
+      setBuyRequests([]);
+    }
+  };
 
 
 
