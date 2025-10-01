@@ -49,36 +49,20 @@ export default function ProductOwnerBuyerRequest({ requests, user, onRefresh }) 
     }
   };
 
-// Current user’s identifiers
-const currentUserDbId = user.dbId;   // From backend (Mongo _id)
-const currentUserUid = user.uid;     // Firebase UID
+  // Current user’s identifiers
+  const currentUserDbId = user.dbId; // From backend (Mongo _id)
+  const currentUserUid = user.uid;   // Firebase UID
 
-console.log("...................:");
-console.log("Current user UID:", currentUserUid);
-console.log("Current user DB ID:", currentUserDbId);
+  // Filter requests
+  const sentRequests = requests.filter(
+    r => r.buyerId === currentUserDbId || r.buyerId === currentUserUid
+  );
 
-// Log all requests coming from backend
-requests.forEach(req => {
-  console.log("Request ID:", req._id);
-  console.log("Product Title:", req.product?.title);
-  console.log("Buyer ID:", req.buyerId);
-  console.log("Seller ID:", req.sellerId);
-  console.log("Status:", req.status);
-});
+  const receivedRequests = requests.filter(
+    r => r.sellerId === currentUserDbId || r.sellerId === currentUserUid
+  );
 
-// Then filter sent/received
-const sentRequests = requests.filter(
-  r => r.buyerId === currentUserDbId || r.buyerId === currentUserUid
-);
-
-const receivedRequests = requests.filter(
-  r => r.sellerId === currentUserDbId || r.sellerId === currentUserUid
-);
-
-console.log("Sent requests:", sentRequests.map(r => r.product?.title));
-console.log("Received requests:", receivedRequests.map(r => r.product?.title));
-
-
+  // Render card for each request
   const renderRequestCard = (req, type) => (
     <View key={req._id} style={styles.card}>
       <Text style={styles.subTitle}>
@@ -93,11 +77,20 @@ console.log("Received requests:", receivedRequests.map(r => r.product?.title));
         ) : (
           <View style={[styles.cardImage, { backgroundColor: theme.border }]} />
         )}
-        <Text>{req.product.title}</Text>
+        <Text style={styles.productTitle}>{req.product.title}</Text>
       </TouchableOpacity>
+
+      {/* ✅ Show seller and buyer info */}
+      <Text style={styles.infoText}>
+        Seller: {req.sellerName} ({req.sellerContact})
+      </Text>
+      <Text style={styles.infoText}>
+        Buyer: {req.buyerName} ({req.buyerContact})
+      </Text>
 
       <Text style={styles.statusText}>Status: {req.status}</Text>
 
+      {/* Cancel button for sent requests */}
       {type === "sent" && req.status === "pending" && (
         <TouchableOpacity
           style={[styles.ownerBadge, { backgroundColor: theme.danger }]}
@@ -107,6 +100,7 @@ console.log("Received requests:", receivedRequests.map(r => r.product?.title));
         </TouchableOpacity>
       )}
 
+      {/* Accept/Reject buttons for received requests */}
       {type === "received" && req.status === "pending" && (
         <View style={styles.actions}>
           <TouchableOpacity
@@ -174,7 +168,13 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginBottom: 10,
   },
+  productTitle: {
+    fontWeight: "600",
+    fontSize: 15,
+    marginBottom: 6,
+  },
   subTitle: { fontWeight: "600", marginBottom: 4 },
+  infoText: { fontSize: 13, color: "#333", marginTop: 2 },
   statusText: { marginTop: 6, fontSize: 12, color: theme.muted },
   ownerBadge: {
     marginTop: 8,
