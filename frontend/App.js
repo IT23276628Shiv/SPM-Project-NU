@@ -1,5 +1,5 @@
-// frontend/App.js - FIXED VERSION
-import React from "react";
+// frontend/App.js
+import React, { useEffect } from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { AuthProvider, useAuth } from "./src/context/AuthContext";
@@ -7,10 +7,17 @@ import AppNavigator from "./src/navigation/AppNavigator";
 import AdminNavigator from "./src/navigation/AdminNavigator";
 import { ActivityIndicator, View, StyleSheet, Text } from "react-native";
 
+import * as WebBrowser from "expo-web-browser";
+import * as Google from "expo-auth-session/providers/google";
+import { GoogleAuthProvider, signInWithCredential } from "firebase/auth";
+import { Client_iD } from "./src/constants/config";
+
+// Make sure WebBrowser is initialized
+WebBrowser.maybeCompleteAuthSession();
+
 function MainApp() {
   const { userDetails, loading, user, userType } = useAuth();
 
-  // Detailed logging for routing decision
   console.log("🚀 MainApp Render - Detailed Debug:");
   console.log("- Loading state:", loading);
   console.log("- Firebase user exists:", !!user);
@@ -19,7 +26,6 @@ function MainApp() {
   console.log("- UserType:", userType);
   console.log("- UserDetails.role:", userDetails?.role);
 
-  // Show loading screen while checking authentication
   if (loading) {
     console.log("⏳ Showing loading screen");
     return (
@@ -30,30 +36,50 @@ function MainApp() {
     );
   }
 
-  // If no user is logged in, show auth screens
   if (!user || !userDetails) {
     console.log("❌ No user/userDetails - showing login screen");
     return <AppNavigator />;
   }
 
-  // FIXED: Check if user is admin (either 'admin' or 'super_admin' userType)
-  console.log("🎯 ROUTING DECISION:");
-  const isAdmin = userType === 'admin' || userDetails?.role === 'admin' || userDetails?.role === 'super_admin';
-  
+  const isAdmin =
+    userType === "admin" ||
+    userDetails?.role === "admin" ||
+    userDetails?.role === "super_admin";
+
   if (isAdmin) {
     console.log("✅ ROUTING TO ADMIN INTERFACE");
-    console.log("- UserType:", userType);
-    console.log("- Role:", userDetails.role);
     return <AdminNavigator />;
   } else {
     console.log("👤 ROUTING TO USER INTERFACE");
-    console.log("- UserType:", userType);
-    console.log("- Role:", userDetails.role);
     return <AppNavigator />;
   }
 }
 
 export default function App() {
+  console.log("Client_iD from app:", Client_iD);
+  // Google Auth hook
+  const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
+      clientId: Client_iD,           // Web client ID
+      useProxy: true,                // must be true for Expo Go
+      redirectUri: 'https://projectuee-ccb28.firebaseapp.com/__/auth/handler' // Firebase redirect URI
+    });
+
+    
+  useEffect(() => {
+    
+    if (response?.type === "success") {
+      const { id_token } = response.params;
+      const credential = GoogleAuthProvider.credential(id_token);
+      signInWithCredential(firebase.auth(), credential)
+        .then(() => {
+          console.log("✅ Google Sign-In successful!");
+        })
+        .catch((error) => {
+          console.error("❌ Google Sign-In error:", error);
+        });
+    }
+  }, [response]);
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <NavigationContainer>
@@ -68,13 +94,13 @@ export default function App() {
 const styles = StyleSheet.create({
   loadingContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F8F9FA',
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#F8F9FA",
   },
   loadingText: {
     marginTop: 10,
     fontSize: 16,
-    color: '#666',
+    color: "#666",
   },
 });

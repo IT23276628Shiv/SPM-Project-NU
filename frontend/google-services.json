@@ -1,0 +1,46 @@
+{
+  "project_info": {
+    "project_number": "349588286177",
+    "project_id": "projectuee-ccb28",
+    "storage_bucket": "projectuee-ccb28.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:349588286177:android:7ef3197970aba7c207e5a0",
+        "android_client_info": {
+          "package_name": "com.harushanan.myapp2"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "349588286177-e7md07tcultkn15b2e8rk36jg9t05g86.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDqf7HWepYY6MS43aAmEWXpCBnw6VuNNw8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "349588286177-e7md07tcultkn15b2e8rk36jg9t05g86.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "349588286177-tjtqavppm8je5c6ch8jcrmainegia8p1.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.harushan.myapp"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -19,8 +19,9 @@ import {
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import authfirebase from '../../../services/firebaseAuth';
 import { Ionicons } from '@expo/vector-icons';
+import { API_URL } from "../../constants/config";
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL;
+
 
 const { width, height } = Dimensions.get('window');
 
