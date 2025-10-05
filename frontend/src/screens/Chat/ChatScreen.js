@@ -1,3 +1,4 @@
+// frontend/src/screens/Chat/ChatScreen.js - FULLY FIXED VERSION
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -24,11 +25,13 @@ import { API_URL } from '../../constants/config';
 import io from 'socket.io-client';
 
 export default function ChatScreen() {
-  const { user } = useAuth();
+  const { user, userDetails } = useAuth();
   const route = useRoute();
   const navigation = useNavigation();
   const flatListRef = useRef(null);
   const socketRef = useRef(null);
+  const isInitialLoad = useRef(true); // ✅ Track first load
+  const isUserScrolling = useRef(false); // ✅ Track if user is manually scrolling
 
   const { conversation, otherUser } = route.params;
 
@@ -43,12 +46,23 @@ export default function ChatScreen() {
   const [inquiryClosed, setInquiryClosed] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [currentUserId, setCurrentUserId] = useState(null);
-  const [lastMessageId, setLastMessageId] = useState(null); // Track last message for polling
+  const [lastMessageId, setLastMessageId] = useState(null);
+  const [showScrollButton, setShowScrollButton] = useState(false); // ✅ Show scroll to bottom button
+  const [newMessagesCount, setNewMessagesCount] = useState(0); // ✅ Count new messages while scrolled up
 
   // Group messages by date
   const groupMessagesByDate = (messagesArray) => {
     const grouped = {};
+    const seenIds = new Set(); // ✅ Track seen message IDs
+    
     messagesArray.forEach(message => {
+      // ✅ FIXED: Skip duplicate messages
+      if (seenIds.has(message._id)) {
+        console.log('⚠️ Duplicate message in grouping:', message._id);
+        return;
+      }
+      seenIds.add(message._id);
+      
       const date = new Date(message.sentDate).toDateString();
       if (!grouped[date]) {
         grouped[date] = [];
@@ -61,6 +75,11 @@ export default function ChatScreen() {
   const [groupedMessages, setGroupedMessages] = useState({});
 
   useEffect(() => {
+    if (userDetails?._id) {
+      setCurrentUserId(userDetails._id);
+      console.log('✅ Current user ID set:', userDetails._id);
+    }
+
     socketRef.current = io(API_URL, {
       transports: ['websocket'],
       auth: { token: user.getIdToken() }
@@ -74,14 +93,27 @@ export default function ChatScreen() {
 
     socketRef.current.on('newMessage', (message) => {
       setMessages(prev => {
+        // ✅ FIXED: Better duplicate check
         const exists = prev.some(m => m._id === message._id);
         if (!exists) {
+          console.log('➕ New message from socket:', message._id);
+          
+          // ✅ If user is scrolled up, increment new messages count
+          if (isUserScrolling.current) {
+            setNewMessagesCount(count => count + 1);
+          }
           return [...prev, { ...message, status: 'delivered' }];
+        } else {
+          console.log('⚠️ Duplicate message ignored (socket):', message._id);
+          return prev; // Don't add duplicate
         }
-        return prev;
       });
       setLastMessageId(message._id);
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+      
+      // ✅ Only auto-scroll if user is at bottom or it's initial load
+      if (!isUserScrolling.current || isInitialLoad.current) {
+        setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+      }
     });
 
     socketRef.current.on('userTyping', ({ userId, isTyping }) => {
@@ -96,37 +128,20 @@ export default function ChatScreen() {
       setMessages(prev => prev.filter(msg => msg._id !== messageId));
     });
 
-    fetchCurrentUserId();
     fetchMessages();
     markMessagesAsRead();
     setupNavigation();
 
     // Start polling
-    const pollingInterval = setInterval(pollMessages, 5000); // Poll every 5 seconds
+    const pollingInterval = setInterval(pollMessages, 5000);
 
     return () => {
       socketRef.current.emit('leaveConversation', conversation._id);
       socketRef.current.disconnect();
-      clearInterval(pollingInterval); // Cleanup polling
+      clearInterval(pollingInterval);
     };
-  }, []);
+  }, [userDetails]);
 
-  const fetchCurrentUserId = async () => {
-    try {
-      const token = await user.getIdToken();
-      const response = await fetch(`${API_URL}/api/users/me`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await response.json();
-      if (response.ok) {
-        setCurrentUserId(data.user._id);
-      }
-    } catch (err) {
-      console.error('Error fetching current user ID:', err);
-    }
-  };
-
-  // Polling function to fetch new messages
   const pollMessages = async () => {
     try {
       const token = await user.getIdToken();
@@ -140,15 +155,30 @@ export default function ChatScreen() {
       const data = await response.json();
       if (response.ok && data.messages?.length > 0) {
         setMessages(prev => {
-          const newMessages = data.messages.filter(
-            msg => !prev.some(existing => existing._id === msg._id)
-          );
-          const updatedMessages = [...prev, ...newMessages];
+          // ✅ FIXED: Better duplicate filtering
+          const existingIds = new Set(prev.map(m => m._id));
+          const newMessages = data.messages.filter(msg => !existingIds.has(msg._id));
+          
           if (newMessages.length > 0) {
+            console.log(`➕ ${newMessages.length} new message(s) from polling`);
             setLastMessageId(newMessages[newMessages.length - 1]._id);
+            
+            // ✅ If user is scrolled up, increment new messages count
+            if (isUserScrolling.current) {
+              setNewMessagesCount(count => count + newMessages.length);
+            }
+            
+            return [...prev, ...newMessages];
+          } else {
+            console.log('⚠️ No new messages (all duplicates ignored)');
+            return prev;
           }
-          return updatedMessages;
         });
+        
+        // ✅ NO auto-scroll during polling unless it's initial load
+        if (isInitialLoad.current) {
+          setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+        }
       }
     } catch (err) {
       console.error('Error polling messages:', err);
@@ -158,7 +188,14 @@ export default function ChatScreen() {
   useEffect(() => {
     if (messages.length > 0) {
       setGroupedMessages(groupMessagesByDate(messages));
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+      
+      // ✅ Only auto-scroll on initial load
+      if (isInitialLoad.current) {
+        setTimeout(() => {
+          flatListRef.current?.scrollToEnd({ animated: false });
+          isInitialLoad.current = false; // Mark initial load as done
+        }, 300);
+      }
     }
   }, [messages]);
 
@@ -185,6 +222,32 @@ export default function ChatScreen() {
       });
     }
   }, [newMessage]);
+
+  // ✅ Handle scroll events
+  const handleScroll = (event) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const distanceFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
+    
+    // User is at bottom if distance is less than 50 pixels
+    const isAtBottom = distanceFromBottom < 50;
+    
+    if (isAtBottom) {
+      isUserScrolling.current = false;
+      setShowScrollButton(false);
+      setNewMessagesCount(0); // Reset count when at bottom
+    } else {
+      isUserScrolling.current = true;
+      setShowScrollButton(true);
+    }
+  };
+
+  // ✅ Scroll to bottom function
+  const scrollToBottom = () => {
+    flatListRef.current?.scrollToEnd({ animated: true });
+    setNewMessagesCount(0);
+    setShowScrollButton(false);
+    isUserScrolling.current = false;
+  };
 
   const setupNavigation = () => {
     navigation.setOptions({
@@ -300,8 +363,12 @@ export default function ChatScreen() {
           conversationId: conversation._id,
           message: data.message
         });
+        
+        // ✅ Always scroll to bottom when sending a message
         setTimeout(() => {
           flatListRef.current?.scrollToEnd({ animated: true });
+          isUserScrolling.current = false;
+          setShowScrollButton(false);
         }, 100);
       } else {
         Alert.alert('Error', data.error || 'Failed to send message');
@@ -592,7 +659,9 @@ export default function ChatScreen() {
       <View style={styles.replyContainer}>
         <View style={styles.replyIndicator}>
           <MaterialCommunityIcons name="reply" size={16} color="#2F6F61" />
-          <Text style={styles.replyLabel}>Replying to {replyTo.senderId._id === user.uid ? 'yourself' : otherUser.username}</Text>
+          <Text style={styles.replyLabel}>
+            Replying to {replyTo.senderId._id === currentUserId ? 'yourself' : otherUser.username}
+          </Text>
         </View>
         <View style={styles.replyContent}>
           <Text style={styles.replyText} numberOfLines={2}>
@@ -606,6 +675,7 @@ export default function ChatScreen() {
     );
   };
 
+  // ✅ FIXED: Swipe component - isolate transform to message only
   const SwipeToReply = ({ children, onReply, isMyMessage }) => {
     const translateX = useRef(new Animated.Value(0)).current;
     
@@ -632,49 +702,16 @@ export default function ChatScreen() {
       }
     };
 
-    const replyIconOpacity = translateX.interpolate({
-      inputRange: isMyMessage ? [-150, -80, 0] : [0, 80, 150],
-      outputRange: [1, 1, 0],
-      extrapolate: 'clamp',
-    });
-
-    const replyIconTranslateX = translateX.interpolate({
-      inputRange: isMyMessage ? [-150, 0] : [0, 150],
-      outputRange: isMyMessage ? [40, 100] : [-100, -40],
-      extrapolate: 'clamp',
-    });
-
     return (
-      <View style={{ flex: 1 }}>
-        <PanGestureHandler
-          onGestureEvent={onGestureEvent}
-          onHandlerStateChange={onHandlerStateChange}
-        >
-          <Animated.View style={{ 
-            flex: 1, 
-            transform: [{ translateX }] 
-          }}>
-            {children}
-          </Animated.View>
-        </PanGestureHandler>
-        
-        <Animated.View
-          style={{
-            position: 'absolute',
-            [isMyMessage ? 'left' : 'right']: 15,
-            top: '50%',
-            transform: [
-              { translateY: -15 },
-              { translateX: replyIconTranslateX }
-            ],
-            opacity: replyIconOpacity,
-          }}
-        >
-          <View style={styles.replyIcon}>
-            <MaterialCommunityIcons name="reply" size={16} color="#FFFFFF" />
-          </View>
+      <PanGestureHandler
+        onGestureEvent={onGestureEvent}
+        onHandlerStateChange={onHandlerStateChange}
+        activeOffsetX={isMyMessage ? [-10, 10] : [-10, 10]}
+      >
+        <Animated.View style={{ transform: [{ translateX }] }}>
+          {children}
         </Animated.View>
-      </View>
+      </PanGestureHandler>
     );
   };
 
@@ -832,19 +869,32 @@ export default function ChatScreen() {
   };
 
   const renderItem = ({ item: dateGroup }) => (
-    <View>
+    <View key={dateGroup.date}>
       {renderDateHeader(dateGroup.date)}
-      {dateGroup.messages.map((message) => (
-        <View key={message._id}>
+      {dateGroup.messages.map((message, index) => (
+        // ✅ FIXED: Use combination of _id and index to ensure unique keys
+        <View key={`${message._id}-${index}`}>
           {renderMessage({ item: message })}
         </View>
       ))}
     </View>
   );
 
+  // ✅ FIXED: Filter duplicate messages before grouping
+  const getUniqueMessages = (messagesArray) => {
+    const seen = new Set();
+    return messagesArray.filter(msg => {
+      if (seen.has(msg._id)) {
+        return false; // Skip duplicate
+      }
+      seen.add(msg._id);
+      return true;
+    });
+  };
+
   const flattenedData = Object.entries(groupedMessages).map(([date, messages]) => ({
     date,
-    messages
+    messages: getUniqueMessages(messages) // ✅ Remove duplicates
   }));
 
   return (
@@ -892,7 +942,8 @@ export default function ChatScreen() {
         renderItem={renderItem}
         style={styles.messagesList}
         contentContainerStyle={styles.messagesContent}
-        onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
           !loading && (
@@ -909,6 +960,24 @@ export default function ChatScreen() {
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#2F6F61" />
         </View>
+      )}
+
+      {/* ✅ Scroll to Bottom Button */}
+      {showScrollButton && (
+        <TouchableOpacity 
+          style={styles.scrollToBottomButton}
+          onPress={scrollToBottom}
+          activeOpacity={0.8}
+        >
+          <MaterialCommunityIcons name="chevron-down" size={24} color="#FFFFFF" />
+          {newMessagesCount > 0 && (
+            <View style={styles.newMessagesBadge}>
+              <Text style={styles.newMessagesText}>
+                {newMessagesCount > 99 ? '99+' : newMessagesCount}
+              </Text>
+            </View>
+          )}
+        </TouchableOpacity>
       )}
 
       {renderReplySection()}
@@ -1362,6 +1431,43 @@ const styles = StyleSheet.create({
     borderRadius: 25,
     padding: 15,
   },
+  // ✅ Scroll to Bottom Button Styles
+  scrollToBottomButton: {
+    position: 'absolute',
+    bottom: 90,
+    right: 20,
+    backgroundColor: '#2F6F61',
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+    zIndex: 1000,
+  },
+  newMessagesBadge: {
+    position: 'absolute',
+    top: -5,
+    right: -5,
+    backgroundColor: '#FF3B30',
+    borderRadius: 12,
+    minWidth: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  newMessagesText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
   modalContainer: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.95)",
@@ -1385,18 +1491,5 @@ const styles = StyleSheet.create({
     padding: 8,
     backgroundColor: "rgba(0,0,0,0.5)",
     borderRadius: 20,
-  },
-  replyIcon: {
-    backgroundColor: '#2F6F61',
-    borderRadius: 15,
-    width: 30,
-    height: 30,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
   },
 });
