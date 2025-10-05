@@ -1,4 +1,4 @@
-// frontend/src/screens/Chat/ChatScreen.js - FULLY FIXED VERSION
+// frontend/src/screens/Chat/ChatScreen.js - FIXED VERSION with Socket.IO (Part 1)
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -24,1031 +24,24 @@ import { useAuth } from '../../context/AuthContext';
 import { API_URL } from '../../constants/config';
 import io from 'socket.io-client';
 
-export default function ChatScreen() {
-  const { user, userDetails } = useAuth();
-  const route = useRoute();
-  const navigation = useNavigation();
-  const flatListRef = useRef(null);
-  const socketRef = useRef(null);
-  const isInitialLoad = useRef(true); // ✅ Track first load
-  const isUserScrolling = useRef(false); // ✅ Track if user is manually scrolling
-
-  const { conversation, otherUser } = route.params;
-
-  const [messages, setMessages] = useState([]);
-  const [newMessage, setNewMessage] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [imageModalVisible, setImageModalVisible] = useState(false);
-  const [selectedImage, setSelectedImage] = useState(null);
-  const [replyTo, setReplyTo] = useState(null);
-  const [isOnline, setIsOnline] = useState(true);
-  const [inquiryClosed, setInquiryClosed] = useState(false);
-  const [isTyping, setIsTyping] = useState(false);
-  const [currentUserId, setCurrentUserId] = useState(null);
-  const [lastMessageId, setLastMessageId] = useState(null);
-  const [showScrollButton, setShowScrollButton] = useState(false); // ✅ Show scroll to bottom button
-  const [newMessagesCount, setNewMessagesCount] = useState(0); // ✅ Count new messages while scrolled up
-
-  // Group messages by date
-  const groupMessagesByDate = (messagesArray) => {
-    const grouped = {};
-    const seenIds = new Set(); // ✅ Track seen message IDs
-    
-    messagesArray.forEach(message => {
-      // ✅ FIXED: Skip duplicate messages
-      if (seenIds.has(message._id)) {
-        console.log('⚠️ Duplicate message in grouping:', message._id);
-        return;
-      }
-      seenIds.add(message._id);
-      
-      const date = new Date(message.sentDate).toDateString();
-      if (!grouped[date]) {
-        grouped[date] = [];
-      }
-      grouped[date].push(message);
-    });
-    return grouped;
-  };
-
-  const [groupedMessages, setGroupedMessages] = useState({});
-
-  useEffect(() => {
-    if (userDetails?._id) {
-      setCurrentUserId(userDetails._id);
-      console.log('✅ Current user ID set:', userDetails._id);
-    }
-
-    socketRef.current = io(API_URL, {
-      transports: ['websocket'],
-      auth: { token: user.getIdToken() }
-    });
-
-    socketRef.current.on('connect', () => {
-      console.log('Socket connected');
-      socketRef.current.emit('userConnect', user.uid);
-      socketRef.current.emit('joinConversation', conversation._id);
-    });
-
-    socketRef.current.on('newMessage', (message) => {
-      setMessages(prev => {
-        // ✅ FIXED: Better duplicate check
-        const exists = prev.some(m => m._id === message._id);
-        if (!exists) {
-          console.log('➕ New message from socket:', message._id);
-          
-          // ✅ If user is scrolled up, increment new messages count
-          if (isUserScrolling.current) {
-            setNewMessagesCount(count => count + 1);
-          }
-          return [...prev, { ...message, status: 'delivered' }];
-        } else {
-          console.log('⚠️ Duplicate message ignored (socket):', message._id);
-          return prev; // Don't add duplicate
-        }
-      });
-      setLastMessageId(message._id);
-      
-      // ✅ Only auto-scroll if user is at bottom or it's initial load
-      if (!isUserScrolling.current || isInitialLoad.current) {
-        setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
-      }
-    });
-
-    socketRef.current.on('userTyping', ({ userId, isTyping }) => {
-      if (userId === otherUser._id) setIsTyping(isTyping);
-    });
-
-    socketRef.current.on('userOnline', ({ userId, isOnline }) => {
-      if (userId === otherUser._id) setIsOnline(isOnline);
-    });
-
-    socketRef.current.on('messageDeleted', ({ messageId }) => {
-      setMessages(prev => prev.filter(msg => msg._id !== messageId));
-    });
-
-    fetchMessages();
-    markMessagesAsRead();
-    setupNavigation();
-
-    // Start polling
-    const pollingInterval = setInterval(pollMessages, 5000);
-
-    return () => {
-      socketRef.current.emit('leaveConversation', conversation._id);
-      socketRef.current.disconnect();
-      clearInterval(pollingInterval);
-    };
-  }, [userDetails]);
-
-  const pollMessages = async () => {
-    try {
-      const token = await user.getIdToken();
-      const response = await fetch(
-        `${API_URL}/api/messages/conversations/${conversation._id}/messages${lastMessageId ? `?sinceMessageId=${lastMessageId}` : ''}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
-
-      const data = await response.json();
-      if (response.ok && data.messages?.length > 0) {
-        setMessages(prev => {
-          // ✅ FIXED: Better duplicate filtering
-          const existingIds = new Set(prev.map(m => m._id));
-          const newMessages = data.messages.filter(msg => !existingIds.has(msg._id));
-          
-          if (newMessages.length > 0) {
-            console.log(`➕ ${newMessages.length} new message(s) from polling`);
-            setLastMessageId(newMessages[newMessages.length - 1]._id);
-            
-            // ✅ If user is scrolled up, increment new messages count
-            if (isUserScrolling.current) {
-              setNewMessagesCount(count => count + newMessages.length);
-            }
-            
-            return [...prev, ...newMessages];
-          } else {
-            console.log('⚠️ No new messages (all duplicates ignored)');
-            return prev;
-          }
-        });
-        
-        // ✅ NO auto-scroll during polling unless it's initial load
-        if (isInitialLoad.current) {
-          setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
-        }
-      }
-    } catch (err) {
-      console.error('Error polling messages:', err);
-    }
-  };
-
-  useEffect(() => {
-    if (messages.length > 0) {
-      setGroupedMessages(groupMessagesByDate(messages));
-      
-      // ✅ Only auto-scroll on initial load
-      if (isInitialLoad.current) {
-        setTimeout(() => {
-          flatListRef.current?.scrollToEnd({ animated: false });
-          isInitialLoad.current = false; // Mark initial load as done
-        }, 300);
-      }
-    }
-  }, [messages]);
-
-  useEffect(() => {
-    if (newMessage.trim()) {
-      socketRef.current.emit('typing', {
-        conversationId: conversation._id,
-        userId: user.uid,
-        isTyping: true
-      });
-      const timer = setTimeout(() => {
-        socketRef.current.emit('typing', {
-          conversationId: conversation._id,
-          userId: user.uid,
-          isTyping: false
-        });
-      }, 2000);
-      return () => clearTimeout(timer);
-    } else {
-      socketRef.current.emit('typing', {
-        conversationId: conversation._id,
-        userId: user.uid,
-        isTyping: false
-      });
-    }
-  }, [newMessage]);
-
-  // ✅ Handle scroll events
-  const handleScroll = (event) => {
-    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
-    const distanceFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
-    
-    // User is at bottom if distance is less than 50 pixels
-    const isAtBottom = distanceFromBottom < 50;
-    
-    if (isAtBottom) {
-      isUserScrolling.current = false;
-      setShowScrollButton(false);
-      setNewMessagesCount(0); // Reset count when at bottom
-    } else {
-      isUserScrolling.current = true;
-      setShowScrollButton(true);
-    }
-  };
-
-  // ✅ Scroll to bottom function
-  const scrollToBottom = () => {
-    flatListRef.current?.scrollToEnd({ animated: true });
-    setNewMessagesCount(0);
-    setShowScrollButton(false);
-    isUserScrolling.current = false;
-  };
-
-  const setupNavigation = () => {
-    navigation.setOptions({
-      title: '',
-      headerStyle: { 
-        backgroundColor: '#2F6F61',
-        shadowColor: 'transparent',
-        elevation: 0,
-      },
-      headerTintColor: '#fff',
-      headerLeft: () => (
-        <TouchableOpacity 
-          onPress={() => navigation.goBack()} 
-          style={styles.headerButton}
-        >
-          <MaterialCommunityIcons name="chevron-left" size={28} color="#fff" />
-          <View style={styles.headerUserInfo}>
-            <Text style={styles.headerUserName}>{otherUser.username}</Text>
-            <Text style={styles.headerUserStatus}>
-              {isTyping ? 'Typing...' : isOnline ? 'Online' : 'Offline'}
-            </Text>
-          </View>
-        </TouchableOpacity>
-      ),
-      headerRight: () => (
-        <View style={styles.headerRight}>
-          <TouchableOpacity onPress={handleVoiceCall} style={styles.headerIcon}>
-            <MaterialCommunityIcons name="phone" size={22} color="#fff" />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={handleMore} style={styles.headerIcon}>
-            <MaterialCommunityIcons name="dots-vertical" size={22} color="#fff" />
-          </TouchableOpacity>
-        </View>
-      ),
-    });
-  };
-
-  const fetchMessages = async () => {
-    try {
-      setLoading(true);
-      const token = await user.getIdToken();
-
-      const response = await fetch(
-        `${API_URL}/api/messages/conversations/${conversation._id}/messages`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
-
-      const data = await response.json();
-      if (response.ok) {
-        setMessages(data.messages || []);
-        if (data.messages?.length > 0) {
-          setLastMessageId(data.messages[data.messages.length - 1]._id);
-        }
-      } else {
-        console.error('Error fetching messages:', data.error);
-        Alert.alert('Error', 'Failed to load messages');
-      }
-    } catch (err) {
-      console.error('Error fetching messages:', err);
-      Alert.alert('Error', 'Failed to load messages');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const markMessagesAsRead = async () => {
-    try {
-      const token = await user.getIdToken();
-      await fetch(
-        `${API_URL}/api/messages/conversations/${conversation._id}/mark-read`,
-        {
-          method: 'PUT',
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
-    } catch (err) {
-      console.error('Error marking read:', err);
-    }
-  };
-
-  const sendMessage = async (messageData) => {
-    if (sending) return;
-
-    try {
-      setSending(true);
-      const token = await user.getIdToken();
-
-      const messagePayload = {
-        conversationId: conversation._id,
-        receiverId: otherUser._id,
-        ...messageData,
-        ...(replyTo && { replyTo: replyTo._id })
-      };
-
-      const response = await fetch(`${API_URL}/api/messages/send`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(messagePayload),
-      });
-
-      const data = await response.json();
-      if (response.ok) {
-        setMessages(prev => [...prev, data.message]);
-        setLastMessageId(data.message._id);
-        setNewMessage('');
-        setReplyTo(null);
-        socketRef.current.emit('sendMessage', {
-          conversationId: conversation._id,
-          message: data.message
-        });
-        
-        // ✅ Always scroll to bottom when sending a message
-        setTimeout(() => {
-          flatListRef.current?.scrollToEnd({ animated: true });
-          isUserScrolling.current = false;
-          setShowScrollButton(false);
-        }, 100);
-      } else {
-        Alert.alert('Error', data.error || 'Failed to send message');
-      }
-    } catch (err) {
-      console.error('Error sending message:', err);
-      Alert.alert('Error', 'Failed to send message');
-    } finally {
-      setSending(false);
-    }
-  };
-
-  const handleSendText = () => {
-    if (!newMessage.trim()) return;
-    sendMessage({ content: newMessage.trim(), messageType: 'text' });
-  };
-
-  const handleImagePicker = async () => {
-    try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission needed', 'Please allow photo access');
-        return;
-      }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [4, 3],
-        quality: 0.8,
-      });
-
-      if (!result.canceled && result.assets[0]) {
-        await uploadAndSendImage(result.assets[0].uri);
-      }
-    } catch (err) {
-      console.error('Image pick error:', err);
-      Alert.alert('Error', 'Failed to pick image');
-    }
-  };
-
-  const uploadAndSendImage = async (uri) => {
-    try {
-      setSending(true);
-      const token = await user.getIdToken();
-
-      const response = await fetch(uri);
-      const blob = await response.blob();
-      
-      const reader = new FileReader();
-      reader.onload = async () => {
-        try {
-          const base64 = reader.result;
-          
-          const uploadResponse = await fetch(`${API_URL}/api/messages/upload-image`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({
-              image: base64
-            }),
-          });
-
-          const uploadData = await uploadResponse.json();
-          
-          if (uploadResponse.ok && uploadData.imageUrl) {
-            sendMessage({
-              messageType: 'image',
-              imageUrl: uploadData.imageUrl,
-              content: '📷 Image',
-            });
-          } else {
-            throw new Error(uploadData.error || 'Upload failed');
-          }
-        } catch (uploadError) {
-          console.error('Upload error:', uploadError);
-          Alert.alert('Error', 'Failed to upload image. Please try again.');
-        }
-      };
-      reader.readAsDataURL(blob);
-    } catch (err) {
-      console.error('Image processing error:', err);
-      Alert.alert('Error', 'Failed to process image.');
-    } finally {
-      setSending(false);
-    }
-  };
-
-  const handleVoiceCall = () => {
-    Alert.alert(
-      'Voice Call', 
-      `Call ${otherUser.username}?`, 
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Call',
-          onPress: () => {
-            sendMessage({
-              messageType: 'call',
-              content: '📞 Voice call started',
-              callType: 'voice',
-              callDuration: 0,
-            });
-          },
-        },
-      ]
-    );
-  };
-
-  const handleMore = () => {
-    Alert.alert(
-      'Chat Options',
-      '',
-      [
-        { text: 'View Profile', onPress: () => {} },
-        { text: 'Clear Chat', onPress: clearChat, style: 'destructive' },
-        { text: 'Block User', onPress: blockUser, style: 'destructive' },
-        ...(conversation.product && !inquiryClosed ? [{ text: 'Close Inquiry', onPress: closeInquiry, style: 'default' }] : []),
-        { text: 'Cancel', style: 'cancel' },
-      ]
-    );
-  };
-
-  const closeInquiry = () => {
-    Alert.alert(
-      'Close Inquiry',
-      'Are you sure you want to close this product inquiry? This will end the conversation about this product.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Close Inquiry', 
-          onPress: () => {
-            setInquiryClosed(true);
-            Alert.alert('Success', 'Inquiry closed successfully');
-            sendMessage({
-              messageType: 'text',
-              content: '🔒 Product inquiry has been closed',
-            });
-          }
-        },
-      ]
-    );
-  };
-
-  const clearChat = () => {
-    Alert.alert(
-      'Clear Chat',
-      'Are you sure you want to clear all messages?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Clear', 
-          style: 'destructive', 
-          onPress: async () => {
-            try {
-              const token = await user.getIdToken();
-              const response = await fetch(
-                `${API_URL}/api/messages/conversations/${conversation._id}`,
-                {
-                  method: 'DELETE',
-                  headers: { Authorization: `Bearer ${token}` },
-                }
-              );
-              
-              if (response.ok) {
-                setMessages([]);
-                setLastMessageId(null);
-                Alert.alert('Success', 'Chat cleared successfully');
-              }
-            } catch (err) {
-              Alert.alert('Error', 'Failed to clear chat');
-            }
-          }
-        },
-      ]
-    );
-  };
-
-  const deleteMessage = async (messageId) => {
-    Alert.alert(
-      'Delete Message',
-      'Are you sure you want to delete this message?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Delete', 
-          style: 'destructive', 
-          onPress: async () => {
-            try {
-              const token = await user.getIdToken();
-              const response = await fetch(
-                `${API_URL}/api/messages/${messageId}`,
-                {
-                  method: 'DELETE',
-                  headers: { Authorization: `Bearer ${token}` },
-                }
-              );
-              
-              if (response.ok) {
-                setMessages(prev => prev.filter(msg => msg._id !== messageId));
-                Alert.alert('Success', 'Message deleted successfully');
-              } else {
-                Alert.alert('Error', 'Failed to delete message');
-              }
-            } catch (err) {
-              console.error('Delete error:', err);
-              Alert.alert('Error', 'Failed to delete message');
-            }
-          }
-        },
-      ]
-    );
-  };
-
-  const blockUser = () => {
-    Alert.alert(
-      'Block User',
-      `Block ${otherUser.username}? You won't receive messages from them.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Block', style: 'destructive', onPress: () => {} },
-      ]
-    );
-  };
-
-  const shareProduct = () => {
-    if (conversation.product) {
-      sendMessage({
-        messageType: 'product',
-        content: `🛍️ ${conversation.product.title}`,
-        sharedProduct: {
-          productId: conversation.product._id,
-          productTitle: conversation.product.title,
-          productPrice: conversation.product.price,
-          productImage: conversation.product.imagesUrls?.[0],
-        },
-      });
-    }
-  };
-
-  const formatMessageTime = (dateString) => {
-    const date = new Date(dateString);
-    return date.toLocaleTimeString('en-US', { 
-      hour: '2-digit', 
-      minute: '2-digit',
-      hour12: true 
-    });
-  };
-
-  const formatDateHeader = (dateString) => {
-    const date = new Date(dateString);
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-
-    if (date.toDateString() === today.toDateString()) {
-      return 'Today';
-    } else if (date.toDateString() === yesterday.toDateString()) {
-      return 'Yesterday';
-    } else {
-      return date.toLocaleDateString('en-US', { 
-        weekday: 'long', 
-        year: 'numeric', 
-        month: 'long', 
-        day: 'numeric' 
-      });
-    }
-  };
-
-  const getMessageStatus = (message) => {
-    if (message.isRead) return '✓✓ Read';
-    if (message.isDelivered) return '✓✓ Delivered';
-    return '✓ Sent';
-  };
-
-  const renderDateHeader = (date) => (
-    <View style={styles.dateHeader}>
-      <Text style={styles.dateHeaderText}>{formatDateHeader(date)}</Text>
-    </View>
-  );
-
-  const renderReplySection = () => {
-    if (!replyTo) return null;
-
-    return (
-      <View style={styles.replyContainer}>
-        <View style={styles.replyIndicator}>
-          <MaterialCommunityIcons name="reply" size={16} color="#2F6F61" />
-          <Text style={styles.replyLabel}>
-            Replying to {replyTo.senderId._id === currentUserId ? 'yourself' : otherUser.username}
-          </Text>
-        </View>
-        <View style={styles.replyContent}>
-          <Text style={styles.replyText} numberOfLines={2}>
-            {replyTo.messageType === 'image' ? '📷 Photo' : replyTo.content}
-          </Text>
-        </View>
-        <TouchableOpacity onPress={() => setReplyTo(null)} style={styles.replyClose}>
-          <MaterialCommunityIcons name="close" size={20} color="#8E8E93" />
-        </TouchableOpacity>
-      </View>
-    );
-  };
-
-  // ✅ FIXED: Swipe component - isolate transform to message only
-  const SwipeToReply = ({ children, onReply, isMyMessage }) => {
-    const translateX = useRef(new Animated.Value(0)).current;
-    
-    const onGestureEvent = Animated.event(
-      [{ nativeEvent: { translationX: translateX } }],
-      { useNativeDriver: true }
-    );
-
-    const onHandlerStateChange = (event) => {
-      if (event.nativeEvent.oldState === State.ACTIVE) {
-        const { translationX } = event.nativeEvent;
-        const threshold = 80;
-        
-        if (Math.abs(translationX) > threshold) {
-          onReply();
-        }
-        
-        Animated.spring(translateX, {
-          toValue: 0,
-          useNativeDriver: true,
-          tension: 100,
-          friction: 8,
-        }).start();
-      }
-    };
-
-    return (
-      <PanGestureHandler
-        onGestureEvent={onGestureEvent}
-        onHandlerStateChange={onHandlerStateChange}
-        activeOffsetX={isMyMessage ? [-10, 10] : [-10, 10]}
-      >
-        <Animated.View style={{ transform: [{ translateX }] }}>
-          {children}
-        </Animated.View>
-      </PanGestureHandler>
-    );
-  };
-
-  const renderMessage = ({ item }) => {
-    const isMyMessage = item.senderId._id === currentUserId;
-
-    return (
-      <SwipeToReply onReply={() => setReplyTo(item)} isMyMessage={isMyMessage}>
-        <View style={[
-          styles.messageContainer, 
-          isMyMessage ? styles.myMessage : styles.otherMessage
-        ]}>
-          <View style={styles.messageWrapper}>
-            {item.replyTo && (
-              <TouchableOpacity 
-                style={[
-                  styles.replyPreview,
-                  isMyMessage ? styles.myReplyPreview : styles.otherReplyPreview
-                ]}
-                onPress={() => {
-                  const repliedIndex = messages.findIndex(m => m._id === item.replyTo._id);
-                  if (repliedIndex !== -1) {
-                    flatListRef.current?.scrollToIndex({ index: repliedIndex, animated: true });
-                  }
-                }}
-              >
-                <View style={[
-                  styles.replyPreviewBar,
-                  isMyMessage ? styles.myReplyBar : styles.otherReplyBar
-                ]} />
-                <View style={styles.replyPreviewContent}>
-                  <Text style={[
-                    styles.replyPreviewName,
-                    isMyMessage ? styles.myReplyName : styles.otherReplyName
-                  ]}>
-                    {item.replyTo.senderId._id === currentUserId ? 'You' : otherUser.username}
-                  </Text>
-                  <Text style={[
-                    styles.replyPreviewText,
-                    isMyMessage ? styles.myReplyText : styles.otherReplyText
-                  ]} numberOfLines={1}>
-                    {item.replyTo.messageType === 'image' ? '📷 Photo' : item.replyTo.content}
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            )}
-            
-            <TouchableOpacity
-              style={[
-                styles.messageBubble,
-                isMyMessage ? styles.myMessageBubble : styles.otherMessageBubble,
-              ]}
-              onLongPress={() => {
-                const options = [
-                  { 
-                    text: 'Reply', 
-                    onPress: () => setReplyTo(item) 
-                  },
-                ];
-
-                if (isMyMessage) {
-                  options.push({ 
-                    text: 'Delete', 
-                    style: 'destructive', 
-                    onPress: () => deleteMessage(item._id)
-                  });
-                }
-
-                options.push({ text: 'Cancel', style: 'cancel' });
-
-                Alert.alert('Message Options', '', options);
-              }}
-            >
-              {item.messageType === 'text' && (
-                <Text style={[
-                  styles.messageText, 
-                  isMyMessage ? styles.myMessageText : styles.otherMessageText
-                ]}>
-                  {item.content}
-                </Text>
-              )}
-              
-              {item.messageType === 'image' && item.imageUrl && (
-                <TouchableOpacity 
-                  onPress={() => {
-                    setSelectedImage(item.imageUrl);
-                    setImageModalVisible(true);
-                  }}
-                >
-                  <Image source={{ uri: item.imageUrl }} style={styles.messageImage} />
-                  <View style={styles.imageOverlay}>
-                    <MaterialCommunityIcons name="magnify-plus" size={20} color="white" />
-                  </View>
-                </TouchableOpacity>
-              )}
-              
-              {item.messageType === 'product' && item.sharedProduct && (
-                <TouchableOpacity
-                  style={styles.productMessage}
-                  onPress={() => {
-                    if (item.sharedProduct.productId) {
-                      navigation.navigate('ProductDetails', {
-                        product: {
-                          _id: item.sharedProduct.productId,
-                          title: item.sharedProduct.productTitle,
-                          price: item.sharedProduct.productPrice,
-                          imagesUrls: [item.sharedProduct.productImage],
-                        }
-                      });
-                    }
-                  }}
-                >
-                  <Image
-                    source={{ uri: item.sharedProduct.productImage }}
-                    style={styles.productImage}
-                  />
-                  <View style={styles.productInfo}>
-                    <Text style={styles.productTitle}>{item.sharedProduct.productTitle}</Text>
-                    <Text style={styles.productPrice}>LKR {item.sharedProduct.productPrice?.toLocaleString()}</Text>
-                    <Text style={styles.productLabel}>Tap to view product</Text>
-                  </View>
-                </TouchableOpacity>
-              )}
-              
-              {item.messageType === 'call' && (
-                <View style={styles.callMessage}>
-                  <MaterialCommunityIcons
-                    name={item.callType === 'video' ? 'video' : 'phone'}
-                    size={16}
-                    color={isMyMessage ? '#fff' : '#2F6F61'}
-                  />
-                  <Text style={[
-                    styles.callText, 
-                    isMyMessage ? styles.myMessageText : styles.otherMessageText
-                  ]}>
-                    {item.content}
-                  </Text>
-                </View>
-              )}
-            </TouchableOpacity>
-            
-            <View style={[
-              styles.messageMeta, 
-              isMyMessage ? styles.myMessageMeta : styles.otherMessageMeta
-            ]}>
-              <Text style={styles.messageTime}>{formatMessageTime(item.sentDate)}</Text>
-              {isMyMessage && (
-                <Text style={styles.messageStatus}>{getMessageStatus(item)}</Text>
-              )}
-            </View>
-          </View>
-        </View>
-      </SwipeToReply>
-    );
-  };
-
-  const renderItem = ({ item: dateGroup }) => (
-    <View key={dateGroup.date}>
-      {renderDateHeader(dateGroup.date)}
-      {dateGroup.messages.map((message, index) => (
-        // ✅ FIXED: Use combination of _id and index to ensure unique keys
-        <View key={`${message._id}-${index}`}>
-          {renderMessage({ item: message })}
-        </View>
-      ))}
-    </View>
-  );
-
-  // ✅ FIXED: Filter duplicate messages before grouping
-  const getUniqueMessages = (messagesArray) => {
-    const seen = new Set();
-    return messagesArray.filter(msg => {
-      if (seen.has(msg._id)) {
-        return false; // Skip duplicate
-      }
-      seen.add(msg._id);
-      return true;
-    });
-  };
-
-  const flattenedData = Object.entries(groupedMessages).map(([date, messages]) => ({
-    date,
-    messages: getUniqueMessages(messages) // ✅ Remove duplicates
-  }));
-
-  return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-    >
-      <StatusBar barStyle="light-content" backgroundColor="#2F6F61" />
-      
-      {conversation.product && !inquiryClosed && (
-        <View style={styles.productHeader}>
-          <TouchableOpacity
-            style={styles.productHeaderContent}
-            onPress={() => {
-              navigation.navigate('ProductDetails', {
-                product: conversation.product
-              });
-            }}
-          >
-            <Image
-              source={{ uri: conversation.product.imagesUrls?.[0] }}
-              style={styles.headerProductImage}
-            />
-            <View style={styles.headerProductInfo}>
-              <Text style={styles.headerProductTitle}>{conversation.product.title}</Text>
-              <Text style={styles.headerProductPrice}>LKR {conversation.product.price?.toLocaleString()}</Text>
-            </View>
-          </TouchableOpacity>
-          <View style={styles.headerActions}>
-            <TouchableOpacity onPress={shareProduct} style={styles.shareButton}>
-              <MaterialCommunityIcons name="share-variant" size={20} color="#2F6F61" />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={closeInquiry} style={styles.closeButton}>
-              <MaterialCommunityIcons name="close" size={20} color="#FF3B30" />
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
-
-      <FlatList
-        ref={flatListRef}
-        data={flattenedData}
-        keyExtractor={(item) => item.date}
-        renderItem={renderItem}
-        style={styles.messagesList}
-        contentContainerStyle={styles.messagesContent}
-        onScroll={handleScroll}
-        scrollEventThrottle={16}
-        showsVerticalScrollIndicator={false}
-        ListEmptyComponent={
-          !loading && (
-            <View style={styles.emptyState}>
-              <MaterialCommunityIcons name="message-outline" size={60} color="#E0E6E3" />
-              <Text style={styles.emptyTitle}>No messages yet</Text>
-              <Text style={styles.emptySubtitle}>Start the conversation by sending a message!</Text>
-            </View>
-          )
-        }
-      />
-
-      {loading && (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#2F6F61" />
-        </View>
-      )}
-
-      {/* ✅ Scroll to Bottom Button */}
-      {showScrollButton && (
-        <TouchableOpacity 
-          style={styles.scrollToBottomButton}
-          onPress={scrollToBottom}
-          activeOpacity={0.8}
-        >
-          <MaterialCommunityIcons name="chevron-down" size={24} color="#FFFFFF" />
-          {newMessagesCount > 0 && (
-            <View style={styles.newMessagesBadge}>
-              <Text style={styles.newMessagesText}>
-                {newMessagesCount > 99 ? '99+' : newMessagesCount}
-              </Text>
-            </View>
-          )}
-        </TouchableOpacity>
-      )}
-
-      {renderReplySection()}
-
-      <View style={styles.inputContainer}>
-        <TouchableOpacity 
-          onPress={handleImagePicker} 
-          style={styles.attachButton}
-          disabled={sending}
-        >
-          <MaterialCommunityIcons name="image" size={24} color="#2F6F61" />
-        </TouchableOpacity>
-
-        <TextInput
-          style={styles.textInput}
-          value={newMessage}
-          onChangeText={setNewMessage}
-          placeholder="Type a message..."
-          placeholderTextColor="#8E8E93"
-          multiline
-          maxLength={1000}
-          editable={!sending}
-        />
-
-        <TouchableOpacity
-          style={[styles.sendButton, (!newMessage.trim() || sending) && styles.sendButtonDisabled]}
-          onPress={handleSendText}
-          disabled={!newMessage.trim() || sending}
-        >
-          {sending ? (
-            <ActivityIndicator size="small" color="#fff" />
-          ) : (
-            <MaterialCommunityIcons
-              name="send"
-              size={20}
-              color="#fff"
-            />
-          )}
-        </TouchableOpacity>
-      </View>
-
-      <Modal
-        visible={imageModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setImageModalVisible(false)}
-      >
-        <View style={styles.modalContainer}>
-          <TouchableOpacity
-            style={styles.modalBackdrop}
-            activeOpacity={1}
-            onPress={() => setImageModalVisible(false)}
-          >
-            <Image source={{ uri: selectedImage }} style={styles.fullImage} />
-            <TouchableOpacity 
-              style={styles.modalClose}
-              onPress={() => setImageModalVisible(false)}
-            >
-              <MaterialCommunityIcons name="close" size={28} color="#fff" />
-            </TouchableOpacity>
-          </TouchableOpacity>
-        </View>
-      </Modal>
-    </KeyboardAvoidingView>
-  );
-}
-
+// Styles
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#F5F7F6",
+  },
+  connectionBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFA726',
+    paddingVertical: 6,
+    gap: 8,
+  },
+  connectionText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '600',
   },
   headerButton: {
     flexDirection: 'row',
@@ -1431,7 +424,6 @@ const styles = StyleSheet.create({
     borderRadius: 25,
     padding: 15,
   },
-  // ✅ Scroll to Bottom Button Styles
   scrollToBottomButton: {
     position: 'absolute',
     bottom: 90,
@@ -1493,3 +485,1085 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
 });
+
+export default function ChatScreen() {
+  const { user, userDetails } = useAuth();
+  const route = useRoute();
+  const navigation = useNavigation();
+  const flatListRef = useRef(null);
+  const socketRef = useRef(null);
+  const isInitialLoad = useRef(true);
+  const isUserScrolling = useRef(false);
+  const messageIdsRef = useRef(new Set()); // ✅ Track message IDs to prevent duplicates
+
+  const { conversation, otherUser } = route.params;
+
+  const [messages, setMessages] = useState([]);
+  const [newMessage, setNewMessage] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [imageModalVisible, setImageModalVisible] = useState(false);
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [replyTo, setReplyTo] = useState(null);
+  const [isOnline, setIsOnline] = useState(true);
+  const [inquiryClosed, setInquiryClosed] = useState(false);
+  const [isTyping, setIsTyping] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState(null);
+  const [showScrollButton, setShowScrollButton] = useState(false);
+  const [newMessagesCount, setNewMessagesCount] = useState(0);
+  const [isConnected, setIsConnected] = useState(false);
+
+  // ✅ Initialize Socket.IO connection
+  useEffect(() => {
+    const initSocket = async () => {
+      try {
+        if (userDetails?._id) {
+          setCurrentUserId(userDetails._id);
+        }
+
+        const token = await user.getIdToken();
+        
+        socketRef.current = io(API_URL, {
+          transports: ['websocket', 'polling'],
+          auth: { token },
+          reconnection: true,
+          reconnectionAttempts: 5,
+          reconnectionDelay: 1000
+        });
+
+        socketRef.current.on('connect', () => {
+          console.log('✅ Chat socket connected');
+          setIsConnected(true);
+          socketRef.current.emit('joinConversation', conversation._id);
+        });
+
+        socketRef.current.on('disconnect', (reason) => {
+          console.log('❌ Chat socket disconnected:', reason);
+          setIsConnected(false);
+        });
+
+        socketRef.current.on('conversationJoined', ({ conversationId }) => {
+          console.log('✅ Joined conversation:', conversationId);
+        });
+
+        // ✅ FIXED: Handle new messages without duplicates
+        socketRef.current.on('newMessage', (message) => {
+          console.log('📨 New message received:', message._id);
+          
+          // Check if message already exists
+          if (messageIdsRef.current.has(message._id)) {
+            console.log('⚠️ Duplicate message ignored:', message._id);
+            return;
+          }
+
+          messageIdsRef.current.add(message._id);
+          
+          setMessages(prev => {
+            // Double-check in state as well
+            const exists = prev.some(m => m._id === message._id);
+            if (exists) {
+              console.log('⚠️ Message already in state:', message._id);
+              return prev;
+            }
+            
+            console.log('✅ Adding new message to state');
+            
+            // If user is scrolled up, increment new messages count
+            if (isUserScrolling.current) {
+              setNewMessagesCount(count => count + 1);
+            }
+            
+            return [...prev, message];
+          });
+          
+          // Auto-scroll if user is at bottom
+          if (!isUserScrolling.current || isInitialLoad.current) {
+            setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+          }
+        });
+
+        // ✅ Handle typing indicator
+        socketRef.current.on('userTyping', ({ userId, isTyping: typing }) => {
+          if (userId === otherUser._id) {
+            setIsTyping(typing);
+          }
+        });
+
+        // ✅ Handle user online status
+        socketRef.current.on('userOnline', ({ userId, isOnline: online }) => {
+          if (userId === otherUser._id) {
+            setIsOnline(online);
+          }
+        });
+
+        // ✅ Handle message delivered
+        socketRef.current.on('messageDelivered', ({ messageId }) => {
+          setMessages(prev => prev.map(msg => 
+            msg._id === messageId ? { ...msg, isDelivered: true, status: 'delivered' } : msg
+          ));
+        });
+
+        // ✅ Handle messages read
+        socketRef.current.on('messagesRead', ({ messageIds }) => {
+          setMessages(prev => prev.map(msg => 
+            messageIds.includes(msg._id) ? { ...msg, isRead: true, status: 'read' } : msg
+          ));
+        });
+
+        // ✅ Handle message deletion
+        socketRef.current.on('messageDeleted', ({ messageId }) => {
+          messageIdsRef.current.delete(messageId);
+          setMessages(prev => prev.filter(msg => msg._id !== messageId));
+        });
+
+        // ✅ Handle call events
+        socketRef.current.on('incomingCall', ({ callerId, callerName, callType, conversationId }) => {
+          Alert.alert(
+            'Incoming Call',
+            `${callerName} is calling you`,
+            [
+              { 
+                text: 'Decline', 
+                onPress: () => socketRef.current.emit('callResponse', { 
+                  conversationId, 
+                  callerId, 
+                  accepted: false 
+                }),
+                style: 'cancel' 
+              },
+              { 
+                text: 'Accept', 
+                onPress: () => socketRef.current.emit('callResponse', { 
+                  conversationId, 
+                  callerId, 
+                  accepted: true 
+                })
+              }
+            ]
+          );
+        });
+
+        socketRef.current.on('callResponse', ({ accepted }) => {
+          Alert.alert(
+            'Call Response',
+            accepted ? 'Call accepted!' : 'Call declined',
+            [{ text: 'OK' }]
+          );
+        });
+
+        socketRef.current.on('callEnded', () => {
+          Alert.alert('Call Ended', 'The call has ended', [{ text: 'OK' }]);
+        });
+
+      } catch (error) {
+        console.error('Socket initialization error:', error);
+      }
+    };
+
+    if (user && userDetails) {
+      initSocket();
+      fetchMessages();
+      markMessagesAsRead();
+      setupNavigation();
+    }
+
+    return () => {
+      if (socketRef.current) {
+        socketRef.current.emit('leaveConversation', conversation._id);
+        socketRef.current.disconnect();
+      }
+    };
+  }, [user, userDetails]);
+
+  // ✅ Handle typing indicator
+  useEffect(() => {
+    if (newMessage.trim() && socketRef.current) {
+      socketRef.current.emit('typing', {
+        conversationId: conversation._id,
+        isTyping: true
+      });
+      
+      const timer = setTimeout(() => {
+        socketRef.current?.emit('typing', {
+          conversationId: conversation._id,
+          isTyping: false
+        });
+      }, 2000);
+      
+      return () => clearTimeout(timer);
+    } else if (socketRef.current) {
+      socketRef.current.emit('typing', {
+        conversationId: conversation._id,
+        isTyping: false
+      });
+    }
+  }, [newMessage]);
+
+  // ✅ Handle scroll events
+  const handleScroll = (event) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const distanceFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
+    
+    const isAtBottom = distanceFromBottom < 50;
+    
+    if (isAtBottom) {
+      isUserScrolling.current = false;
+      setShowScrollButton(false);
+      setNewMessagesCount(0);
+      
+      // Mark messages as read when at bottom
+      if (messages.length > 0) {
+        const unreadMessages = messages
+          .filter(msg => !msg.isRead && msg.receiverId._id === currentUserId)
+          .map(msg => msg._id);
+        
+        if (unreadMessages.length > 0 && socketRef.current) {
+          socketRef.current.emit('messageRead', {
+            conversationId: conversation._id,
+            messageIds: unreadMessages
+          });
+        }
+      }
+    } else {
+      isUserScrolling.current = true;
+      setShowScrollButton(true);
+    }
+  };
+
+  // ✅ Scroll to bottom function
+  const scrollToBottom = () => {
+    flatListRef.current?.scrollToEnd({ animated: true });
+    setNewMessagesCount(0);
+    setShowScrollButton(false);
+    isUserScrolling.current = false;
+  };
+
+  const setupNavigation = () => {
+    navigation.setOptions({
+      title: '',
+      headerStyle: { 
+        backgroundColor: '#2F6F61',
+        shadowColor: 'transparent',
+        elevation: 0,
+      },
+      headerTintColor: '#fff',
+      headerLeft: () => (
+        <TouchableOpacity 
+          onPress={() => navigation.goBack()} 
+          style={styles.headerButton}
+        >
+          <MaterialCommunityIcons name="chevron-left" size={28} color="#fff" />
+          <View style={styles.headerUserInfo}>
+            <Text style={styles.headerUserName}>{otherUser.username}</Text>
+            <Text style={styles.headerUserStatus}>
+              {isTyping ? 'Typing...' : isOnline ? 'Online' : 'Offline'}
+            </Text>
+          </View>
+        </TouchableOpacity>
+      ),
+      headerRight: () => (
+        <View style={styles.headerRight}>
+          <TouchableOpacity onPress={handleVoiceCall} style={styles.headerIcon}>
+            <MaterialCommunityIcons name="phone" size={22} color="#fff" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleMore} style={styles.headerIcon}>
+            <MaterialCommunityIcons name="dots-vertical" size={22} color="#fff" />
+          </TouchableOpacity>
+        </View>
+      ),
+    });
+  };
+
+  const fetchMessages = async () => {
+    try {
+      setLoading(true);
+      const token = await user.getIdToken();
+
+      const response = await fetch(
+        `${API_URL}/api/messages/conversations/${conversation._id}/messages`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      const data = await response.json();
+      if (response.ok) {
+        // ✅ Clear and rebuild message IDs set
+        messageIdsRef.current.clear();
+        data.messages.forEach(msg => messageIdsRef.current.add(msg._id));
+        
+        setMessages(data.messages || []);
+        
+        // ✅ Scroll to bottom on initial load
+        if (isInitialLoad.current && data.messages?.length > 0) {
+          setTimeout(() => {
+            flatListRef.current?.scrollToEnd({ animated: false });
+            isInitialLoad.current = false;
+          }, 300);
+        }
+      } else {
+        console.error('Error fetching messages:', data.error);
+        Alert.alert('Error', 'Failed to load messages');
+      }
+    } catch (err) {
+      console.error('Error fetching messages:', err);
+      Alert.alert('Error', 'Failed to load messages');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const markMessagesAsRead = async () => {
+    try {
+      const token = await user.getIdToken();
+      await fetch(
+        `${API_URL}/api/messages/conversations/${conversation._id}/mark-read`,
+        {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+    } catch (err) {
+      console.error('Error marking read:', err);
+    }
+  };
+
+  const sendMessage = async (messageData) => {
+    if (sending) return;
+
+    try {
+      setSending(true);
+      const token = await user.getIdToken();
+
+      const messagePayload = {
+        conversationId: conversation._id,
+        receiverId: otherUser._id,
+        ...messageData,
+        ...(replyTo && { replyTo: replyTo._id })
+      };
+
+      const response = await fetch(`${API_URL}/api/messages/send`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(messagePayload),
+      });
+
+      const data = await response.json();
+      if (response.ok) {
+        // ✅ Add message ID to set
+        messageIdsRef.current.add(data.message._id);
+        
+        // ✅ Add message to state
+        setMessages(prev => [...prev, data.message]);
+        setNewMessage('');
+        setReplyTo(null);
+        
+        // ✅ Emit via socket for real-time delivery
+        if (socketRef.current) {
+          socketRef.current.emit('sendMessage', {
+            conversationId: conversation._id,
+            message: data.message
+          });
+        }
+        
+        // Always scroll to bottom when sending
+        setTimeout(() => {
+          flatListRef.current?.scrollToEnd({ animated: true });
+          isUserScrolling.current = false;
+          setShowScrollButton(false);
+        }, 100);
+      } else {
+        Alert.alert('Error', data.error || 'Failed to send message');
+      }
+    } catch (err) {
+      console.error('Error sending message:', err);
+      Alert.alert('Error', 'Failed to send message');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleSendText = () => {
+    if (!newMessage.trim()) return;
+    sendMessage({ content: newMessage.trim(), messageType: 'text' });
+  };
+
+  const handleImagePicker = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Please allow photo access');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        await uploadAndSendImage(result.assets[0].uri);
+      }
+    } catch (err) {
+      console.error('Image pick error:', err);
+      Alert.alert('Error', 'Failed to pick image');
+    }
+  };
+
+  const uploadAndSendImage = async (uri) => {
+    try {
+      setSending(true);
+      const token = await user.getIdToken();
+
+      const response = await fetch(uri);
+      const blob = await response.blob();
+      
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const base64 = reader.result;
+          
+          const uploadResponse = await fetch(`${API_URL}/api/messages/upload-image`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ image: base64 }),
+          });
+
+          const uploadData = await uploadResponse.json();
+          
+          if (uploadResponse.ok && uploadData.imageUrl) {
+            sendMessage({
+              messageType: 'image',
+              imageUrl: uploadData.imageUrl,
+              content: '📷 Image',
+            });
+          } else {
+            throw new Error(uploadData.error || 'Upload failed');
+          }
+        } catch (uploadError) {
+          console.error('Upload error:', uploadError);
+          Alert.alert('Error', 'Failed to upload image. Please try again.');
+        }
+      };
+      reader.readAsDataURL(blob);
+    } catch (err) {
+      console.error('Image processing error:', err);
+      Alert.alert('Error', 'Failed to process image.');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleVoiceCall = () => {
+    Alert.alert(
+      'Voice Call', 
+      `Call ${otherUser.username}?`, 
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Call',
+          onPress: () => {
+            if (socketRef.current) {
+              socketRef.current.emit('callUser', {
+                conversationId: conversation._id,
+                callType: 'voice',
+                receiverId: otherUser._id
+              });
+            }
+            sendMessage({
+              messageType: 'call',
+              content: '📞 Voice call started',
+              callType: 'voice',
+              callDuration: 0,
+            });
+          },
+        },
+      ]
+    );
+  };
+
+  const handleMore = () => {
+    Alert.alert(
+      'Chat Options',
+      '',
+      [
+        { text: 'View Profile', onPress: () => {} },
+        { text: 'Clear Chat', onPress: clearChat, style: 'destructive' },
+        { text: 'Block User', onPress: blockUser, style: 'destructive' },
+        ...(conversation.product && !inquiryClosed ? [{ text: 'Close Inquiry', onPress: closeInquiry, style: 'default' }] : []),
+        { text: 'Cancel', style: 'cancel' },
+      ]
+    );
+  };
+
+  const closeInquiry = () => {
+    Alert.alert(
+      'Close Inquiry',
+      'Are you sure you want to close this product inquiry?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Close Inquiry', 
+          onPress: () => {
+            setInquiryClosed(true);
+            Alert.alert('Success', 'Inquiry closed successfully');
+            sendMessage({
+              messageType: 'text',
+              content: '🔒 Product inquiry has been closed',
+            });
+          }
+        },
+      ]
+    );
+  };
+
+  const clearChat = () => {
+    Alert.alert(
+      'Clear Chat',
+      'Are you sure you want to clear all messages?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Clear', 
+          style: 'destructive', 
+          onPress: async () => {
+            try {
+              const token = await user.getIdToken();
+              const response = await fetch(
+                `${API_URL}/api/messages/conversations/${conversation._id}`,
+                {
+                  method: 'DELETE',
+                  headers: { Authorization: `Bearer ${token}` },
+                }
+              );
+              
+              if (response.ok) {
+                messageIdsRef.current.clear();
+                setMessages([]);
+                Alert.alert('Success', 'Chat cleared successfully');
+              }
+            } catch (err) {
+              Alert.alert('Error', 'Failed to clear chat');
+            }
+          }
+        },
+      ]
+    );
+  };
+
+  const deleteMessage = async (messageId) => {
+    Alert.alert(
+      'Delete Message',
+      'Are you sure you want to delete this message?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Delete', 
+          style: 'destructive', 
+          onPress: async () => {
+            try {
+              const token = await user.getIdToken();
+              const response = await fetch(
+                `${API_URL}/api/messages/${messageId}`,
+                {
+                  method: 'DELETE',
+                  headers: { Authorization: `Bearer ${token}` },
+                }
+              );
+              
+              if (response.ok) {
+                messageIdsRef.current.delete(messageId);
+                setMessages(prev => prev.filter(msg => msg._id !== messageId));
+                
+                // Emit deletion via socket
+                if (socketRef.current) {
+                  socketRef.current.emit('deleteMessage', {
+                    messageId,
+                    conversationId: conversation._id
+                  });
+                }
+                
+                Alert.alert('Success', 'Message deleted successfully');
+              } else {
+                Alert.alert('Error', 'Failed to delete message');
+              }
+            } catch (err) {
+              console.error('Delete error:', err);
+              Alert.alert('Error', 'Failed to delete message');
+            }
+          }
+        },
+      ]
+    );
+  };
+
+  const blockUser = () => {
+    Alert.alert(
+      'Block User',
+      `Block ${otherUser.username}? You won't receive messages from them.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Block', style: 'destructive', onPress: () => {} },
+      ]
+    );
+  };
+
+  const shareProduct = () => {
+    if (conversation.product) {
+      sendMessage({
+        messageType: 'product',
+        content: `🛍️ ${conversation.product.title}`,
+        sharedProduct: {
+          productId: conversation.product._id,
+          productTitle: conversation.product.title,
+          productPrice: conversation.product.price,
+          productImage: conversation.product.imagesUrls?.[0],
+        },
+      });
+    }
+  };
+
+  const formatMessageTime = (dateString) => {
+    const date = new Date(dateString);
+    return date.toLocaleTimeString('en-US', { 
+      hour: '2-digit', 
+      minute: '2-digit',
+      hour12: true 
+    });
+  };
+
+  const formatDateHeader = (dateString) => {
+    const date = new Date(dateString);
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    if (date.toDateString() === today.toDateString()) {
+      return 'Today';
+    } else if (date.toDateString() === yesterday.toDateString()) {
+      return 'Yesterday';
+    } else {
+      return date.toLocaleDateString('en-US', { 
+        weekday: 'long', 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+      });
+    }
+  };
+
+  const getMessageStatus = (message) => {
+    if (message.isRead) return '✓✓ Read';
+    if (message.isDelivered) return '✓✓ Delivered';
+    return '✓ Sent';
+  };
+
+  // Group messages by date
+  const groupMessagesByDate = (messagesArray) => {
+    const grouped = {};
+    
+    messagesArray.forEach(message => {
+      const date = new Date(message.sentDate).toDateString();
+      if (!grouped[date]) {
+        grouped[date] = [];
+      }
+      grouped[date].push(message);
+    });
+    return grouped;
+  };
+
+  const renderDateHeader = (date) => (
+    <View style={styles.dateHeader}>
+      <Text style={styles.dateHeaderText}>{formatDateHeader(date)}</Text>
+    </View>
+  );
+
+  const renderReplySection = () => {
+    if (!replyTo) return null;
+
+    return (
+      <View style={styles.replyContainer}>
+        <View style={styles.replyIndicator}>
+          <MaterialCommunityIcons name="reply" size={16} color="#2F6F61" />
+          <Text style={styles.replyLabel}>
+            Replying to {replyTo.senderId._id === currentUserId ? 'yourself' : otherUser.username}
+          </Text>
+        </View>
+        <View style={styles.replyContent}>
+          <Text style={styles.replyText} numberOfLines={2}>
+            {replyTo.messageType === 'image' ? '📷 Photo' : replyTo.content}
+          </Text>
+        </View>
+        <TouchableOpacity onPress={() => setReplyTo(null)} style={styles.replyClose}>
+          <MaterialCommunityIcons name="close" size={20} color="#8E8E93" />
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  const SwipeToReply = ({ children, onReply }) => {
+    const translateX = useRef(new Animated.Value(0)).current;
+    
+    const onGestureEvent = Animated.event(
+      [{ nativeEvent: { translationX: translateX } }],
+      { useNativeDriver: true }
+    );
+
+    const onHandlerStateChange = (event) => {
+      if (event.nativeEvent.oldState === State.ACTIVE) {
+        const { translationX } = event.nativeEvent;
+        const threshold = 80;
+        
+        if (Math.abs(translationX) > threshold) {
+          onReply();
+        }
+        
+        Animated.spring(translateX, {
+          toValue: 0,
+          useNativeDriver: true,
+          tension: 100,
+          friction: 8,
+        }).start();
+      }
+    };
+
+    return (
+      <PanGestureHandler
+        onGestureEvent={onGestureEvent}
+        onHandlerStateChange={onHandlerStateChange}
+        activeOffsetX={[-10, 10]}
+      >
+        <Animated.View style={{ transform: [{ translateX }] }}>
+          {children}
+        </Animated.View>
+      </PanGestureHandler>
+    );
+  };
+
+  const renderMessage = ({ item }) => {
+    const isMyMessage = item.senderId._id === currentUserId;
+
+    return (
+      <SwipeToReply onReply={() => setReplyTo(item)}>
+        <View style={[
+          styles.messageContainer, 
+          isMyMessage ? styles.myMessage : styles.otherMessage
+        ]}>
+          <View style={styles.messageWrapper}>
+            {item.replyTo && (
+              <TouchableOpacity 
+                style={[
+                  styles.replyPreview,
+                  isMyMessage ? styles.myReplyPreview : styles.otherReplyPreview
+                ]}
+                onPress={() => {
+                  const repliedIndex = messages.findIndex(m => m._id === item.replyTo.messageId);
+                  if (repliedIndex !== -1) {
+                    flatListRef.current?.scrollToIndex({ index: repliedIndex, animated: true });
+                  }
+                }}
+              >
+                <View style={[
+                  styles.replyPreviewBar,
+                  isMyMessage ? styles.myReplyBar : styles.otherReplyBar
+                ]} />
+                <View style={styles.replyPreviewContent}>
+                  <Text style={[
+                    styles.replyPreviewName,
+                    isMyMessage ? styles.myReplyName : styles.otherReplyName
+                  ]}>
+                    {item.replyTo.senderId._id === currentUserId ? 'You' : otherUser.username}
+                  </Text>
+                  <Text style={[
+                    styles.replyPreviewText,
+                    isMyMessage ? styles.myReplyText : styles.otherReplyText
+                  ]} numberOfLines={1}>
+                    {item.replyTo.messageType === 'image' ? '📷 Photo' : item.replyTo.content}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            )}
+            
+            <TouchableOpacity
+              style={[
+                styles.messageBubble,
+                isMyMessage ? styles.myMessageBubble : styles.otherMessageBubble,
+              ]}
+              onLongPress={() => {
+                const options = [
+                  { 
+                    text: 'Reply', 
+                    onPress: () => setReplyTo(item) 
+                  },
+                ];
+
+                if (isMyMessage) {
+                  options.push({ 
+                    text: 'Delete', 
+                    style: 'destructive', 
+                    onPress: () => deleteMessage(item._id)
+                  });
+                }
+
+                options.push({ text: 'Cancel', style: 'cancel' });
+
+                Alert.alert('Message Options', '', options);
+              }}
+            >
+              {item.messageType === 'text' && (
+                <Text style={[
+                  styles.messageText, 
+                  isMyMessage ? styles.myMessageText : styles.otherMessageText
+                ]}>
+                  {item.content}
+                </Text>
+              )}
+              
+              {item.messageType === 'image' && item.imageUrl && (
+                <TouchableOpacity 
+                  onPress={() => {
+                    setSelectedImage(item.imageUrl);
+                    setImageModalVisible(true);
+                  }}
+                >
+                  <Image source={{ uri: item.imageUrl }} style={styles.messageImage} />
+                  <View style={styles.imageOverlay}>
+                    <MaterialCommunityIcons name="magnify-plus" size={20} color="white" />
+                  </View>
+                </TouchableOpacity>
+              )}
+              
+              {item.messageType === 'product' && item.sharedProduct && (
+                <TouchableOpacity
+                  style={styles.productMessage}
+                  onPress={() => {
+                    if (item.sharedProduct.productId) {
+                      navigation.navigate('ProductDetails', {
+                        product: {
+                          _id: item.sharedProduct.productId,
+                          title: item.sharedProduct.productTitle,
+                          price: item.sharedProduct.productPrice,
+                          imagesUrls: [item.sharedProduct.productImage],
+                        }
+                      });
+                    }
+                  }}
+                >
+                  <Image
+                    source={{ uri: item.sharedProduct.productImage }}
+                    style={styles.productImage}
+                  />
+                  <View style={styles.productInfo}>
+                    <Text style={styles.productTitle}>{item.sharedProduct.productTitle}</Text>
+                    <Text style={styles.productPrice}>LKR {item.sharedProduct.productPrice?.toLocaleString()}</Text>
+                    <Text style={styles.productLabel}>Tap to view product</Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+              
+              {item.messageType === 'call' && (
+                <View style={styles.callMessage}>
+                  <MaterialCommunityIcons
+                    name={item.callType === 'video' ? 'video' : 'phone'}
+                    size={16}
+                    color={isMyMessage ? '#fff' : '#2F6F61'}
+                  />
+                  <Text style={[
+                    styles.callText, 
+                    isMyMessage ? styles.myMessageText : styles.otherMessageText
+                  ]}>
+                    {item.content}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+            
+            <View style={[
+              styles.messageMeta, 
+              isMyMessage ? styles.myMessageMeta : styles.otherMessageMeta
+            ]}>
+              <Text style={styles.messageTime}>{formatMessageTime(item.sentDate)}</Text>
+              {isMyMessage && (
+                <Text style={styles.messageStatus}>{getMessageStatus(item)}</Text>
+              )}
+            </View>
+          </View>
+        </View>
+      </SwipeToReply>
+    );
+  };
+
+  const groupedMessages = groupMessagesByDate(messages);
+  const flattenedData = Object.entries(groupedMessages).map(([date, msgs]) => ({
+    date,
+    messages: msgs
+  }));
+
+  const renderItem = ({ item: dateGroup }) => (
+    <View key={dateGroup.date}>
+      {renderDateHeader(dateGroup.date)}
+      {dateGroup.messages.map((message) => (
+        <View key={message._id}>
+          {renderMessage({ item: message })}
+        </View>
+      ))}
+    </View>
+  );
+
+  return (
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+    >
+      <StatusBar barStyle="light-content" backgroundColor="#2F6F61" />
+      
+      {/* ✅ Connection indicator */}
+      {!isConnected && (
+        <View style={styles.connectionBanner}>
+          <MaterialCommunityIcons name="wifi-off" size={16} color="#FFF" />
+          <Text style={styles.connectionText}>Connecting...</Text>
+        </View>
+      )}
+      
+      {conversation.product && !inquiryClosed && (
+        <View style={styles.productHeader}>
+          <TouchableOpacity
+            style={styles.productHeaderContent}
+            onPress={() => {
+              navigation.navigate('ProductDetails', {
+                product: conversation.product
+              });
+            }}
+          >
+            <Image
+              source={{ uri: conversation.product.imagesUrls?.[0] }}
+              style={styles.headerProductImage}
+            />
+            <View style={styles.headerProductInfo}>
+              <Text style={styles.headerProductTitle}>{conversation.product.title}</Text>
+              <Text style={styles.headerProductPrice}>LKR {conversation.product.price?.toLocaleString()}</Text>
+            </View>
+          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            <TouchableOpacity onPress={shareProduct} style={styles.shareButton}>
+              <MaterialCommunityIcons name="share-variant" size={20} color="#2F6F61" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={closeInquiry} style={styles.closeButton}>
+              <MaterialCommunityIcons name="close" size={20} color="#FF3B30" />
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      <FlatList
+        ref={flatListRef}
+        data={flattenedData}
+        keyExtractor={(item) => item.date}
+        renderItem={renderItem}
+        style={styles.messagesList}
+        contentContainerStyle={styles.messagesContent}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
+        showsVerticalScrollIndicator={false}
+        ListEmptyComponent={
+          !loading && (
+            <View style={styles.emptyState}>
+              <MaterialCommunityIcons name="message-outline" size={60} color="#E0E6E3" />
+              <Text style={styles.emptyTitle}>No messages yet</Text>
+              <Text style={styles.emptySubtitle}>Start the conversation!</Text>
+            </View>
+          )
+        }
+      />
+
+      {loading && (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#2F6F61" />
+        </View>
+      )}
+
+      {showScrollButton && (
+        <TouchableOpacity 
+          style={styles.scrollToBottomButton}
+          onPress={scrollToBottom}
+        >
+          <MaterialCommunityIcons name="chevron-down" size={24} color="#FFFFFF" />
+          {newMessagesCount > 0 && (
+            <View style={styles.newMessagesBadge}>
+              <Text style={styles.newMessagesText}>
+                {newMessagesCount > 99 ? '99+' : newMessagesCount}
+              </Text>
+            </View>
+          )}
+        </TouchableOpacity>
+      )}
+
+      {renderReplySection()}
+
+      <View style={styles.inputContainer}>
+        <TouchableOpacity 
+          onPress={handleImagePicker} 
+          style={styles.attachButton}
+          disabled={sending}
+        >
+          <MaterialCommunityIcons name="image" size={24} color="#2F6F61" />
+        </TouchableOpacity>
+
+        <TextInput
+          style={styles.textInput}
+          value={newMessage}
+          onChangeText={setNewMessage}
+          placeholder="Type a message..."
+          placeholderTextColor="#8E8E93"
+          multiline
+          maxLength={1000}
+          editable={!sending}
+        />
+
+        <TouchableOpacity
+          style={[styles.sendButton, (!newMessage.trim() || sending) && styles.sendButtonDisabled]}
+          onPress={handleSendText}
+          disabled={!newMessage.trim() || sending}
+        >
+          {sending ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <MaterialCommunityIcons name="send" size={20} color="#fff" />
+          )}
+        </TouchableOpacity>
+      </View>
+
+      <Modal
+        visible={imageModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setImageModalVisible(false)}
+      >
+        <View style={styles.modalContainer}>
+          <TouchableOpacity
+            style={styles.modalBackdrop}
+            activeOpacity={1}
+            onPress={() => setImageModalVisible(false)}
+          >
+            <Image source={{ uri: selectedImage }} style={styles.fullImage} />
+            <TouchableOpacity 
+              style={styles.modalClose}
+              onPress={() => setImageModalVisible(false)}
+            >
+              <MaterialCommunityIcons name="close" size={28} color="#fff" />
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </View>
+      </Modal>
+    </KeyboardAvoidingView>
+  );
+}

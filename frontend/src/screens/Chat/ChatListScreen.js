@@ -1,5 +1,5 @@
-// frontend/src/screens/Chat/ChatListScreen.js - FIXED VERSION with polling
-import React, { useState, useRef } from "react";
+// frontend/src/screens/Chat/ChatListScreen.js - FIXED VERSION with Socket.IO
+import React, { useState, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -19,6 +19,7 @@ import { API_URL } from "../../constants/config";
 import Layout from "../../components/Layouts";
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
 import Swipeable from "react-native-gesture-handler/Swipeable";
+import io from "socket.io-client";
 
 export default function ChatListScreen() {
   const { user } = useAuth();
@@ -28,8 +29,119 @@ export default function ChatListScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState("all");
+  const [isConnected, setIsConnected] = useState(false);
   const swipeableRefs = useRef(new Map());
-  const pollingInterval = useRef(null);
+  const socketRef = useRef(null);
+
+  // ✅ Initialize Socket.IO connection
+  useEffect(() => {
+    const initSocket = async () => {
+      try {
+        const token = await user.getIdToken();
+        
+        socketRef.current = io(API_URL, {
+          transports: ['websocket', 'polling'],
+          auth: { token }
+        });
+
+        socketRef.current.on('connect', () => {
+          console.log('✅ ChatList socket connected');
+          setIsConnected(true);
+        });
+
+        socketRef.current.on('disconnect', (reason) => {
+          console.log('❌ ChatList socket disconnected:', reason);
+          setIsConnected(false);
+        });
+
+        // ✅ Listen for new messages (updates conversation list)
+        socketRef.current.on('newMessage', (message) => {
+          console.log('📨 New message received in ChatList:', message._id);
+          updateConversationWithMessage(message);
+        });
+
+        // ✅ Listen for conversation updates
+        socketRef.current.on('conversationUpdated', ({ conversationId, update }) => {
+          console.log('🔄 Conversation updated:', conversationId);
+          updateConversation(conversationId, update);
+        });
+
+        // ✅ Listen for message deletions
+        socketRef.current.on('messageDeleted', ({ messageId, conversationId }) => {
+          console.log('🗑️ Message deleted:', messageId);
+          // Optionally refresh the conversation
+          fetchConvs(true);
+        });
+
+        // ✅ Listen for messages read
+        socketRef.current.on('messagesRead', ({ conversationId, messageIds, readBy }) => {
+          console.log('✓✓ Messages read in conversation:', conversationId);
+          // Update unread count for conversation
+          setConversations(prev => prev.map(conv => {
+            if (conv._id === conversationId) {
+              return {
+                ...conv,
+                unreadCount: Math.max(0, conv.unreadCount - messageIds.length)
+              };
+            }
+            return conv;
+          }));
+        });
+
+      } catch (error) {
+        console.error('Socket initialization error:', error);
+      }
+    };
+
+    if (user) {
+      initSocket();
+    }
+
+    return () => {
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+      }
+    };
+  }, [user]);
+
+  // ✅ Update conversation with new message
+  const updateConversationWithMessage = (message) => {
+    setConversations(prev => {
+      const updated = prev.map(conv => {
+        // Check if message belongs to this conversation
+        if (
+          (conv.otherUser._id === message.senderId._id || 
+           conv.otherUser._id === message.receiverId._id)
+        ) {
+          return {
+            ...conv,
+            lastMessage: {
+              content: message.content,
+              senderId: message.senderId,
+              messageType: message.messageType,
+              sentDate: message.sentDate
+            },
+            unreadCount: message.receiverId._id === user.uid ? 
+              (conv.unreadCount || 0) + 1 : conv.unreadCount,
+            updatedAt: message.sentDate
+          };
+        }
+        return conv;
+      });
+
+      // Sort by most recent
+      return updated.sort((a, b) => 
+        new Date(b.updatedAt) - new Date(a.updatedAt)
+      );
+    });
+  };
+
+  // ✅ Update specific conversation
+  const updateConversation = (conversationId, update) => {
+    setConversations(prev => prev.map(conv => 
+      conv._id === conversationId ? { ...conv, ...update } : conv
+    ));
+  };
 
   const fetchConvs = async (silent = false) => {
     try {
@@ -44,22 +156,13 @@ export default function ChatListScreen() {
           const otherId = conv.otherUser._id;
           if (
             !grouped[otherId] ||
-            new Date(conv.updatedAt) >
-              new Date(grouped[otherId].updatedAt)
+            new Date(conv.updatedAt) > new Date(grouped[otherId].updatedAt)
           ) {
             grouped[otherId] = conv;
           }
         });
         const unique = Object.values(grouped);
-        
-        // Only update if there are changes (prevent unnecessary re-renders)
-        setConversations(prev => {
-          if (JSON.stringify(prev) !== JSON.stringify(unique)) {
-            return unique;
-          }
-          return prev;
-        });
-        
+        setConversations(unique);
         applyFilters(unique, activeFilter, searchQuery);
       } else if (!silent) {
         console.error('Error fetching conversations:', data.error);
@@ -94,27 +197,11 @@ export default function ChatListScreen() {
     setFiltered(filteredList);
   };
 
-  // FIXED: Add 0.5 second polling
-  const startPolling = () => {
-    pollingInterval.current = setInterval(() => {
-      fetchConvs(true); // Silent fetch
-    }, 500); // 0.5 second polling
-  };
-
-  const stopPolling = () => {
-    if (pollingInterval.current) {
-      clearInterval(pollingInterval.current);
-      pollingInterval.current = null;
-    }
-  };
-
   useFocusEffect(
     React.useCallback(() => {
       fetchConvs();
-      startPolling();
       
       return () => {
-        stopPolling();
         // Close any open swipeables when leaving screen
         swipeableRefs.current.forEach(ref => {
           ref?.close();
@@ -183,7 +270,6 @@ export default function ChatListScreen() {
       });
       
       if (resp.ok) {
-        // Remove from local state
         const updated = conversations.filter(conv => conv._id !== conversationId);
         setConversations(updated);
         applyFilters(updated, activeFilter, searchQuery);
@@ -199,7 +285,6 @@ export default function ChatListScreen() {
   };
 
   const handleArchive = (conversationId) => {
-    // Implement archive functionality here
     Alert.alert("Archived", "Conversation archived");
   };
 
@@ -318,7 +403,6 @@ export default function ChatListScreen() {
               )}
             </View>
             
-            {/* FIXED: Show unread count if greater than 0 */}
             {isUnread && (
               <View style={styles.unreadCountBadge}>
                 <Text style={styles.unreadCountText}>
@@ -370,10 +454,12 @@ export default function ChatListScreen() {
           <Text style={styles.pageTitle}>Messages</Text>
           <Text style={styles.subtitle}>Connect with buyers & sellers</Text>
           
-          {/* FIXED: Show polling indicator */}
+          {/* ✅ Socket connection status */}
           <View style={styles.statusIndicator}>
-            
-            
+            <View style={[styles.onlineIndicator, !isConnected && styles.offlineIndicator]} />
+            <Text style={[styles.statusText, !isConnected && styles.offlineText]}>
+              {isConnected ? 'Live updates active' : 'Reconnecting...'}
+            </Text>
           </View>
         </View>
 
@@ -401,7 +487,6 @@ export default function ChatListScreen() {
           </View>
         </View>
 
-        {/* FIXED: Show conversation count */}
         <View style={styles.countContainer}>
           <Text style={styles.countText}>
             {filtered.length} conversation{filtered.length !== 1 ? 's' : ''}
@@ -444,11 +529,6 @@ export default function ChatListScreen() {
             maxToRenderPerBatch={10}
             windowSize={10}
             initialNumToRender={10}
-            getItemLayout={(data, index) => ({
-              length: 90, // Approximate item height
-              offset: 90 * index,
-              index,
-            })}
           />
         )}
       </View>
@@ -481,7 +561,6 @@ const styles = StyleSheet.create({
     color: "#8E8E93",
     marginTop: 4,
   },
-  // FIXED: Status indicator for live updates
   statusIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -494,10 +573,16 @@ const styles = StyleSheet.create({
     backgroundColor: '#4CAF50',
     marginRight: 6,
   },
+  offlineIndicator: {
+    backgroundColor: '#FF9500',
+  },
   statusText: {
     fontSize: 12,
     color: '#4CAF50',
     fontWeight: '500',
+  },
+  offlineText: {
+    color: '#FF9500',
   },
   searchSection: {
     paddingHorizontal: 20,
@@ -553,7 +638,6 @@ const styles = StyleSheet.create({
   filterTextActive: {
     color: "#FFFFFF",
   },
-  // FIXED: Count container
   countContainer: {
     paddingHorizontal: 20,
     paddingBottom: 8,
@@ -670,7 +754,6 @@ const styles = StyleSheet.create({
     flex: 1,
     marginRight: 8,
   },
-  // FIXED: Unread count badge
   unreadCountBadge: {
     position: 'absolute',
     top: -5,
@@ -731,7 +814,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
   },
-  // Swipe actions styles
   swipeActions: {
     flexDirection: "row",
     width: 160,
