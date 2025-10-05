@@ -1,5 +1,5 @@
-// frontend/src/screens/Chat/ChatListScreen.js - FIXED VERSION with Socket.IO
-import React, { useState, useRef, useEffect } from "react";
+// frontend/src/screens/Chat/ChatListScreen.js - SUPER DUPER ENHANCED VERSION
+import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import {
   View,
   Text,
@@ -11,85 +11,390 @@ import {
   TextInput,
   Animated,
   StatusBar,
-  Alert
+  Alert,
+  Platform,
+  ActivityIndicator,
+  Keyboard,
+  Dimensions,
+  LayoutAnimation,
+  UIManager,
+  Pressable,
+  Modal,
+  ScrollView,
+  Switch,
+  Vibration
 } from "react-native";
-import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import { useFocusEffect, useNavigation, useRoute } from "@react-navigation/native";
 import { useAuth } from "../../context/AuthContext";
 import { API_URL } from "../../constants/config";
 import Layout from "../../components/Layouts";
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
 import Swipeable from "react-native-gesture-handler/Swipeable";
+import { RectButton, State } from "react-native-gesture-handler";
 import io from "socket.io-client";
+import { debounce, throttle } from "lodash";
+import LinearGradient from 'react-native-linear-gradient';
+import * as Haptics from 'expo-haptics';
+import { BlurView } from 'expo-blur';
+import LottieView from 'lottie-react-native';
+
+// Enable LayoutAnimation for Android
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+const { width, height } = Dimensions.get('window');
+const ANIMATION_CONFIG = {
+  duration: 300,
+  create: {
+    type: LayoutAnimation.Types.easeInEaseOut,
+    property: LayoutAnimation.Properties.opacity,
+  },
+  update: {
+    type: LayoutAnimation.Types.easeInEaseOut,
+  },
+};
+
+// Advanced Filters Modal Component
+const AdvancedFiltersModal = ({ filters, onFiltersChange, onClose, onApply }) => {
+  const [localFilters, setLocalFilters] = useState(filters);
+
+  const updateFilter = (key, value) => {
+    setLocalFilters(prev => ({ ...prev, [key]: value }));
+  };
+
+  return (
+    <View style={styles.modalContainer}>
+      <View style={styles.modalHeader}>
+        <Text style={styles.modalTitle}>Advanced Filters</Text>
+        <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+          <MaterialCommunityIcons name="close" size={24} color="#1A1A1C" />
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView style={styles.modalContent}>
+        <View style={styles.filterSection}>
+          <Text style={styles.filterSectionTitle}>Content Type</Text>
+          
+          <View style={styles.filterOption}>
+            <View>
+              <Text style={styles.filterLabel}>Unread Only</Text>
+              <Text style={styles.filterDescription}>Show only conversations with unread messages</Text>
+            </View>
+            <Switch
+              value={localFilters.unreadOnly}
+              onValueChange={(value) => updateFilter('unreadOnly', value)}
+              trackColor={{ false: '#E0E6E3', true: '#2F6F61' }}
+              thumbColor="#FFFFFF"
+            />
+          </View>
+
+          <View style={styles.filterOption}>
+            <View>
+              <Text style={styles.filterLabel}>With Media</Text>
+              <Text style={styles.filterDescription}>Show conversations with photos or videos</Text>
+            </View>
+            <Switch
+              value={localFilters.withMedia}
+              onValueChange={(value) => updateFilter('withMedia', value)}
+              trackColor={{ false: '#E0E6E3', true: '#2F6F61' }}
+              thumbColor="#FFFFFF"
+            />
+          </View>
+
+          <View style={styles.filterOption}>
+            <View>
+              <Text style={styles.filterLabel}>With Products</Text>
+              <Text style={styles.filterDescription}>Show conversations about products</Text>
+            </View>
+            <Switch
+              value={localFilters.withProducts}
+              onValueChange={(value) => updateFilter('withProducts', value)}
+              trackColor={{ false: '#E0E6E3', true: '#2F6F61' }}
+              thumbColor="#FFFFFF"
+            />
+          </View>
+        </View>
+
+        <View style={styles.filterSection}>
+          <Text style={styles.filterSectionTitle}>Time Range</Text>
+          {['all', 'today', 'week', 'month'].map((range) => (
+            <TouchableOpacity
+              key={range}
+              style={[
+                styles.radioOption,
+                localFilters.dateRange === range && styles.radioOptionSelected
+              ]}
+              onPress={() => updateFilter('dateRange', range)}
+            >
+              <View style={styles.radioCircle}>
+                {localFilters.dateRange === range && <View style={styles.radioInner} />}
+              </View>
+              <Text style={[
+                styles.radioLabel,
+                localFilters.dateRange === range && styles.radioLabelSelected
+              ]}>
+                {range === 'all' && 'All Time'}
+                {range === 'today' && 'Today'}
+                {range === 'week' && 'Past Week'}
+                {range === 'month' && 'Past Month'}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <View style={styles.filterSection}>
+          <Text style={styles.filterSectionTitle}>Sort By</Text>
+          {['recent', 'unread', 'alphabetical'].map((sort) => (
+            <TouchableOpacity
+              key={sort}
+              style={[
+                styles.radioOption,
+                localFilters.sortBy === sort && styles.radioOptionSelected
+              ]}
+              onPress={() => updateFilter('sortBy', sort)}
+            >
+              <View style={styles.radioCircle}>
+                {localFilters.sortBy === sort && <View style={styles.radioInner} />}
+              </View>
+              <Text style={[
+                styles.radioLabel,
+                localFilters.sortBy === sort && styles.radioLabelSelected
+              ]}>
+                {sort === 'recent' && 'Most Recent'}
+                {sort === 'unread' && 'Unread First'}
+                {sort === 'alphabetical' && 'Alphabetical'}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </ScrollView>
+
+      <View style={styles.modalFooter}>
+        <TouchableOpacity 
+          style={styles.secondaryButton}
+          onPress={() => setLocalFilters({
+            unreadOnly: false,
+            withMedia: false,
+            withProducts: false,
+            dateRange: 'all',
+            sortBy: 'recent'
+          })}
+        >
+          <Text style={styles.secondaryButtonText}>Reset</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={styles.primaryButton}
+          onPress={() => {
+            onFiltersChange(localFilters);
+            onApply();
+          }}
+        >
+          <Text style={styles.primaryButtonText}>Apply Filters</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+};
+
+// Filter Button Component
+const FilterButton = React.memo(({ label, filter, icon, active, onPress }) => (
+  <TouchableOpacity
+    style={[styles.filterBtn, active && styles.filterBtnActive]}
+    onPress={() => onPress(filter)}
+    activeOpacity={0.7}
+  >
+    <MaterialCommunityIcons 
+      name={icon} 
+      size={16} 
+      color={active ? "#FFFFFF" : "#2F6F61"} 
+    />
+    <Text style={[styles.filterText, active && styles.filterTextActive]}>
+      {label}
+    </Text>
+  </TouchableOpacity>
+));
 
 export default function ChatListScreen() {
   const { user } = useAuth();
   const navigation = useNavigation();
+  const route = useRoute();
+  
+  // Enhanced State Management
   const [conversations, setConversations] = useState([]);
   const [filtered, setFiltered] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState("all");
   const [isConnected, setIsConnected] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [connectionStatus, setConnectionStatus] = useState("connecting");
+  const [hasMore, setHasMore] = useState(true);
+  const [page, setPage] = useState(1);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [selectedConversations, setSelectedConversations] = useState(new Set());
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [showFiltersModal, setShowFiltersModal] = useState(false);
+  const [advancedFilters, setAdvancedFilters] = useState({
+    unreadOnly: false,
+    withMedia: false,
+    withProducts: false,
+    dateRange: 'all',
+    sortBy: 'recent'
+  });
+  const [typingUsers, setTypingUsers] = useState({});
+  const [onlineUsers, setOnlineUsers] = useState(new Set());
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [newMessagePulse, setNewMessagePulse] = useState(null);
+
+  // Refs
   const swipeableRefs = useRef(new Map());
   const socketRef = useRef(null);
+  const listRef = useRef(null);
+  const searchInputRef = useRef(null);
+  const pulseAnimation = useRef(new Animated.Value(0)).current;
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const headerOpacity = useRef(new Animated.Value(1)).current;
+  const lastMessageTime = useRef({});
 
-  // ✅ Initialize Socket.IO connection
+  // Connection status with enhanced visual feedback
+  const connectionConfig = {
+    connected: { 
+      color: "#4CAF50", 
+      text: "Live • Real-time updates", 
+      icon: "wifi-strength-4",
+      gradient: ['#4CAF50', '#45a049']
+    },
+    connecting: { 
+      color: "#FF9500", 
+      text: "Connecting...", 
+      icon: "wifi-strength-2",
+      gradient: ['#FF9500', '#e68900']
+    },
+    disconnected: { 
+      color: "#FF3B30", 
+      text: "Reconnecting...", 
+      icon: "wifi-strength-1",
+      gradient: ['#FF3B30', '#e53328']
+    },
+    error: { 
+      color: "#FF3B30", 
+      text: "Connection failed", 
+      icon: "wifi-off",
+      gradient: ['#FF3B30', '#d32f2f']
+    }
+  };
+
+  // 🚀 SUPER ENHANCED Socket.IO with Advanced Features
   useEffect(() => {
     const initSocket = async () => {
       try {
-        const token = await user.getIdToken();
+        setConnectionStatus("connecting");
+        if (Platform.OS === 'ios') {
+          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        }
         
+        const token = await user?.getIdToken?.();
+        
+        if (!token) {
+          setConnectionStatus("error");
+          return;
+        }
+
         socketRef.current = io(API_URL, {
           transports: ['websocket', 'polling'],
-          auth: { token }
+          auth: { token },
+          reconnection: true,
+          reconnectionAttempts: 10,
+          reconnectionDelay: 1000,
+          reconnectionDelayMax: 5000,
+          timeout: 20000,
+          forceNew: true,
+          multiplex: false
         });
 
-        socketRef.current.on('connect', () => {
-          console.log('✅ ChatList socket connected');
+        // Enhanced event handlers
+        const socket = socketRef.current;
+
+        socket.on('connect', () => {
+          console.log('🚀 ChatList socket connected with ID:', socket.id);
           setIsConnected(true);
+          setConnectionStatus("connected");
+          if (Platform.OS === 'ios') {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          }
+          triggerPulseAnimation();
         });
 
-        socketRef.current.on('disconnect', (reason) => {
-          console.log('❌ ChatList socket disconnected:', reason);
+        socket.on('disconnect', (reason) => {
+          console.log('❌ Socket disconnected:', reason);
           setIsConnected(false);
+          setConnectionStatus("disconnected");
         });
 
-        // ✅ Listen for new messages (updates conversation list)
-        socketRef.current.on('newMessage', (message) => {
-          console.log('📨 New message received in ChatList:', message._id);
-          updateConversationWithMessage(message);
+        socket.on('connect_error', (error) => {
+          console.error('Socket connection error:', error);
+          setConnectionStatus("error");
+          if (Platform.OS === 'ios') {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          }
         });
 
-        // ✅ Listen for conversation updates
-        socketRef.current.on('conversationUpdated', ({ conversationId, update }) => {
-          console.log('🔄 Conversation updated:', conversationId);
-          updateConversation(conversationId, update);
+        socket.on('reconnect_attempt', (attempt) => {
+          console.log(`🔄 Reconnection attempt ${attempt}`);
+          setConnectionStatus("connecting");
         });
 
-        // ✅ Listen for message deletions
-        socketRef.current.on('messageDeleted', ({ messageId, conversationId }) => {
-          console.log('🗑️ Message deleted:', messageId);
-          // Optionally refresh the conversation
-          fetchConvs(true);
+        socket.on('reconnect_failed', () => {
+          console.error('Socket reconnection failed');
+          setConnectionStatus("error");
         });
 
-        // ✅ Listen for messages read
-        socketRef.current.on('messagesRead', ({ conversationId, messageIds, readBy }) => {
-          console.log('✓✓ Messages read in conversation:', conversationId);
-          // Update unread count for conversation
-          setConversations(prev => prev.map(conv => {
-            if (conv._id === conversationId) {
-              return {
-                ...conv,
-                unreadCount: Math.max(0, conv.unreadCount - messageIds.length)
-              };
-            }
-            return conv;
-          }));
+        // 🆕 REAL-TIME EVENTS
+        socket.on('newMessage', (message) => {
+          handleNewMessage(message);
+          triggerMessageNotification(message);
+        });
+
+        socket.on('conversationUpdated', ({ conversationId, update }) => {
+          handleConversationUpdate(conversationId, update);
+        });
+
+        socket.on('messageDeleted', ({ messageId, conversationId }) => {
+          handleMessageDeletion(conversationId);
+        });
+
+        socket.on('messagesRead', ({ conversationId, messageIds, readBy }) => {
+          handleMessagesRead(conversationId, messageIds);
+        });
+
+        socket.on('conversationCreated', (conversation) => {
+          handleNewConversation(conversation);
+        });
+
+        socket.on('userTyping', ({ conversationId, userId, isTyping, username }) => {
+          handleUserTyping(conversationId, userId, isTyping, username);
+        });
+
+        socket.on('userOnlineStatus', ({ userId, isOnline, lastSeen }) => {
+          handleUserOnlineStatus(userId, isOnline);
+        });
+
+        socket.on('conversationArchived', ({ conversationId, archived }) => {
+          handleConversationArchive(conversationId, archived);
+        });
+
+        socket.on('bulkDeleteComplete', ({ deletedCount }) => {
+          handleBulkDeleteComplete(deletedCount);
+        });
+
+        socket.on('newUnreadCount', ({ conversationId, unreadCount }) => {
+          updateUnreadCount(conversationId, unreadCount);
         });
 
       } catch (error) {
         console.error('Socket initialization error:', error);
+        setConnectionStatus("error");
       }
     };
 
@@ -99,439 +404,1034 @@ export default function ChatListScreen() {
 
     return () => {
       if (socketRef.current) {
+        socketRef.current.removeAllListeners();
         socketRef.current.disconnect();
       }
     };
   }, [user]);
 
-  // ✅ Update conversation with new message
-  const updateConversationWithMessage = (message) => {
+  // 🎬 Pulse animation for new messages
+  const triggerPulseAnimation = useCallback(() => {
+    pulseAnimation.setValue(0);
+    Animated.sequence([
+      Animated.timing(pulseAnimation, {
+        toValue: 1,
+        duration: 800,
+        useNativeDriver: true,
+      }),
+      Animated.timing(pulseAnimation, {
+        toValue: 0,
+        duration: 800,
+        useNativeDriver: true,
+      })
+    ]).start();
+  }, [pulseAnimation]);
+
+  const triggerMessageNotification = useCallback((message) => {
+    if (Platform.OS === 'ios') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } else {
+      Vibration.vibrate(50);
+    }
+    
+    setNewMessagePulse(message.conversationId);
+    setTimeout(() => setNewMessagePulse(null), 2000);
+    
+    triggerPulseAnimation();
+  }, [triggerPulseAnimation]);
+
+  // 🆕 Enhanced message handling with animations
+  const handleNewMessage = useCallback((message) => {
+    LayoutAnimation.configureNext(ANIMATION_CONFIG);
+    
     setConversations(prev => {
-      const updated = prev.map(conv => {
-        // Check if message belongs to this conversation
-        if (
-          (conv.otherUser._id === message.senderId._id || 
-           conv.otherUser._id === message.receiverId._id)
-        ) {
-          return {
-            ...conv,
-            lastMessage: {
-              content: message.content,
-              senderId: message.senderId,
-              messageType: message.messageType,
-              sentDate: message.sentDate
-            },
-            unreadCount: message.receiverId._id === user.uid ? 
-              (conv.unreadCount || 0) + 1 : conv.unreadCount,
-            updatedAt: message.sentDate
-          };
-        }
-        return conv;
-      });
+      const now = Date.now();
+      const conversationId = message.conversationId;
+      
+      // Prevent duplicate rapid updates
+      if (lastMessageTime.current[conversationId] && 
+          now - lastMessageTime.current[conversationId] < 500) {
+        return prev;
+      }
+      lastMessageTime.current[conversationId] = now;
 
-      // Sort by most recent
-      return updated.sort((a, b) => 
-        new Date(b.updatedAt) - new Date(a.updatedAt)
+      const existingConvIndex = prev.findIndex(conv => 
+        conv._id === conversationId
       );
-    });
-  };
 
-  // ✅ Update specific conversation
-  const updateConversation = (conversationId, update) => {
+      if (existingConvIndex !== -1) {
+        const updated = [...prev];
+        const existingConv = updated[existingConvIndex];
+        
+        const updatedConv = {
+          ...existingConv,
+          lastMessage: {
+            content: message.content,
+            senderId: message.senderId,
+            messageType: message.messageType,
+            sentDate: message.sentDate,
+            _id: message._id
+          },
+          unreadCount: message.receiverId?._id === user?.uid ? 
+            (existingConv.unreadCount || 0) + 1 : existingConv.unreadCount,
+          updatedAt: message.sentDate || new Date().toISOString(),
+          hasUnread: message.receiverId?._id === user?.uid
+        };
+
+        updated[existingConvIndex] = updatedConv;
+
+        // Move to top with animation
+        const [movedConv] = updated.splice(existingConvIndex, 1);
+        return [movedConv, ...updated];
+      } else {
+        // New conversation - fetch updated list
+        setTimeout(() => fetchConvs(true), 100);
+        return prev;
+      }
+    });
+  }, [user]);
+
+  const handleUserTyping = useCallback((conversationId, userId, isTyping, username) => {
+    setTypingUsers(prev => ({
+      ...prev,
+      [conversationId]: isTyping ? { userId, username } : null
+    }));
+  }, []);
+
+  const handleUserOnlineStatus = useCallback((userId, isOnline) => {
+    setOnlineUsers(prev => {
+      const newSet = new Set(prev);
+      if (isOnline) {
+        newSet.add(userId);
+      } else {
+        newSet.delete(userId);
+      }
+      return newSet;
+    });
+  }, []);
+
+  const handleConversationArchive = useCallback((conversationId, archived) => {
+    setConversations(prev => prev.map(conv => 
+      conv._id === conversationId ? { ...conv, isArchived: archived } : conv
+    ));
+  }, []);
+
+  const handleBulkDeleteComplete = useCallback((deletedCount) => {
+    Alert.alert("Success", `${deletedCount} conversations deleted successfully`);
+    setSelectedConversations(new Set());
+    setIsSelectionMode(false);
+    fetchConvs(true);
+  }, []);
+
+  const updateUnreadCount = useCallback((conversationId, unreadCount) => {
+    setConversations(prev => prev.map(conv => 
+      conv._id === conversationId ? { ...conv, unreadCount } : conv
+    ));
+  }, []);
+
+  const handleConversationUpdate = useCallback((conversationId, update) => {
     setConversations(prev => prev.map(conv => 
       conv._id === conversationId ? { ...conv, ...update } : conv
     ));
-  };
+  }, []);
 
-  const fetchConvs = async (silent = false) => {
+  const handleNewConversation = useCallback((conversation) => {
+    setConversations(prev => {
+      const exists = prev.find(conv => conv._id === conversation._id);
+      if (!exists) {
+        return [conversation, ...prev];
+      }
+      return prev;
+    });
+  }, []);
+
+  const handleMessagesRead = useCallback((conversationId, messageIds) => {
+    setConversations(prev => prev.map(conv => {
+      if (conv._id === conversationId) {
+        return {
+          ...conv,
+          unreadCount: Math.max(0, (conv.unreadCount || 0) - messageIds.length)
+        };
+      }
+      return conv;
+    }));
+  }, []);
+
+  const handleMessageDeletion = useCallback((conversationId) => {
+    fetchConvs(true);
+  }, []);
+
+  // 🚀 Enhanced data fetching with caching
+  const fetchConvs = useCallback(async (silent = false, loadMore = false) => {
+    if (!user) return;
+
     try {
-      const token = await user.getIdToken();
-      const resp = await fetch(`${API_URL}/api/messages/conversations`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      const data = await resp.json();
-      if (resp.ok) {
-        const grouped = {};
-        (data.conversations || []).forEach(conv => {
-          const otherId = conv.otherUser._id;
-          if (
-            !grouped[otherId] ||
-            new Date(conv.updatedAt) > new Date(grouped[otherId].updatedAt)
-          ) {
-            grouped[otherId] = conv;
-          }
-        });
-        const unique = Object.values(grouped);
-        setConversations(unique);
-        applyFilters(unique, activeFilter, searchQuery);
+      if (loadMore) {
+        setIsLoadingMore(true);
       } else if (!silent) {
-        console.error('Error fetching conversations:', data.error);
+        setIsLoading(true);
+        LayoutAnimation.configureNext(ANIMATION_CONFIG);
+      }
+
+      const token = await user.getIdToken();
+      const queryParams = new URLSearchParams({
+        page: loadMore ? page + 1 : 1,
+        limit: '25',
+        include: 'onlineStatus,typingStatus',
+        sort: 'updatedAt:desc'
+      });
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+      const resp = await fetch(`${API_URL}/api/messages/conversations?${queryParams}`, {
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'Cache-Control': 'no-cache'
+        },
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+
+      const data = await resp.json();
+      
+      if (resp.ok) {
+        const conversationsData = data.conversations || [];
+        
+        if (loadMore) {
+          setConversations(prev => {
+            const merged = [...prev, ...conversationsData];
+            const unique = merged.reduce((acc, current) => {
+              if (!acc.find(item => item._id === current._id)) {
+                acc.push(current);
+              }
+              return acc;
+            }, []);
+            return unique;
+          });
+          setPage(prev => prev + 1);
+          setHasMore(conversationsData.length >= 25);
+        } else {
+          setConversations(conversationsData);
+          setPage(1);
+          setHasMore(data.hasMore || false);
+        }
+
+        // Update online users
+        if (data.onlineUsers) {
+          setOnlineUsers(new Set(data.onlineUsers));
+        }
       }
     } catch (err) {
-      if (!silent) {
-        console.error('Fetch conversations error:', err);
+      if (!silent && err.name !== 'AbortError') {
+        Alert.alert("Connection Error", "Unable to load conversations. Please check your connection.");
       }
+    } finally {
+      setIsLoading(false);
+      setIsLoadingMore(false);
+      setRefreshing(false);
     }
-  };
+  }, [user, page]);
 
-  const applyFilters = (convos, filter, query) => {
+  // 🎯 Super Advanced Search & Filtering
+  const debouncedSearch = useRef(
+    debounce((query, convos, filter, advancedFilters) => {
+      applyFilters(convos, filter, query, advancedFilters);
+    }, 400)
+  ).current;
+
+  const applyFilters = useCallback((convos, filter, query, advancedFilters) => {
     let filteredList = convos;
     
-    if (filter === "unread") {
-      filteredList = filteredList.filter(conv => conv.unreadCount > 0);
-    } else if (filter === "groups") {
-      filteredList = filteredList.filter(conv => conv.isGroupChat);
+    // Apply main filter
+    switch (filter) {
+      case "unread":
+        filteredList = filteredList.filter(conv => conv.unreadCount > 0);
+        break;
+      case "groups":
+        filteredList = filteredList.filter(conv => conv.isGroupChat);
+        break;
+      case "archived":
+        filteredList = filteredList.filter(conv => conv.isArchived);
+        break;
+      default:
+        break;
     }
-    
+
+    // Apply advanced filters
+    if (advancedFilters.unreadOnly) {
+      filteredList = filteredList.filter(conv => conv.unreadCount > 0);
+    }
+    if (advancedFilters.withMedia) {
+      filteredList = filteredList.filter(conv => 
+        conv.lastMessage?.messageType === 'image' || 
+        conv.lastMessage?.messageType === 'video'
+      );
+    }
+    if (advancedFilters.withProducts) {
+      filteredList = filteredList.filter(conv => conv.product != null);
+    }
+
+    // Apply date range filter
+    const now = new Date();
+    switch (advancedFilters.dateRange) {
+      case 'today':
+        filteredList = filteredList.filter(conv => {
+          const convDate = new Date(conv.updatedAt);
+          return convDate.toDateString() === now.toDateString();
+        });
+        break;
+      case 'week':
+        const weekAgo = new Date(now.setDate(now.getDate() - 7));
+        filteredList = filteredList.filter(conv => new Date(conv.updatedAt) > weekAgo);
+        break;
+      case 'month':
+        const monthAgo = new Date(now.setMonth(now.getMonth() - 1));
+        filteredList = filteredList.filter(conv => new Date(conv.updatedAt) > monthAgo);
+        break;
+    }
+
+    // Apply search query
     if (query.trim()) {
       const lower = query.toLowerCase();
       filteredList = filteredList.filter(conv => {
-        return (
-          conv.otherUser.username.toLowerCase().includes(lower) ||
-          (conv.product?.title || "").toLowerCase().includes(lower) ||
-          (conv.lastMessage?.content || "").toLowerCase().includes(lower)
-        );
+        const usernameMatch = conv.otherUser?.username?.toLowerCase().includes(lower);
+        const productMatch = conv.product?.title?.toLowerCase().includes(lower);
+        const lastMessageMatch = conv.lastMessage?.content?.toLowerCase().includes(lower);
+        const userBioMatch = conv.otherUser?.bio?.toLowerCase().includes(lower);
+        
+        return usernameMatch || productMatch || lastMessageMatch || userBioMatch;
       });
+    }
+
+    // Apply sorting
+    switch (advancedFilters.sortBy) {
+      case 'recent':
+        filteredList.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+        break;
+      case 'unread':
+        filteredList.sort((a, b) => (b.unreadCount || 0) - (a.unreadCount || 0));
+        break;
+      case 'alphabetical':
+        filteredList.sort((a, b) => a.otherUser?.username?.localeCompare(b.otherUser?.username));
+        break;
     }
     
     setFiltered(filteredList);
-  };
+  }, []);
 
-  useFocusEffect(
-    React.useCallback(() => {
-      fetchConvs();
-      
-      return () => {
-        // Close any open swipeables when leaving screen
-        swipeableRefs.current.forEach(ref => {
-          ref?.close();
-        });
-      };
-    }, [])
-  );
-
-  // Update filters when conversations change
-  React.useEffect(() => {
-    applyFilters(conversations, activeFilter, searchQuery);
-  }, [conversations, activeFilter, searchQuery]);
-
-  const onRefresh = () => {
-    setRefreshing(true);
-    fetchConvs().finally(() => setRefreshing(false));
-  };
-
-  const handleSearch = (q) => {
-    setSearchQuery(q);
-  };
-
-  const handleFilterChange = (filter) => {
-    setActiveFilter(filter);
-  };
-
-  const formatTime = (d) => {
-    if (!d) return "";
-    const dt = new Date(d);
-    const now = new Date();
-    const diffH = (now - dt) / (1000 * 60 * 60);
-    
-    if (diffH < 1) {
-      const diffM = Math.floor(diffH * 60);
-      return diffM < 1 ? "now" : `${diffM}m`;
-    } else if (diffH < 24) {
-      return `${Math.floor(diffH)}h`;
-    } else if (diffH < 48) {
-      return "yesterday";
-    } else {
-      return dt.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  // 🎮 Selection Mode Features
+  const toggleSelectionMode = useCallback(() => {
+    LayoutAnimation.configureNext(ANIMATION_CONFIG);
+    setIsSelectionMode(prev => !prev);
+    setSelectedConversations(new Set());
+    if (Platform.OS === 'ios') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
-  };
+  }, []);
 
-  const handleDelete = (conversationId) => {
+  const toggleConversationSelection = useCallback((conversationId) => {
+    setSelectedConversations(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(conversationId)) {
+        newSet.delete(conversationId);
+      } else {
+        newSet.add(conversationId);
+      }
+      return newSet;
+    });
+    if (Platform.OS === 'ios') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+  }, []);
+
+  const selectAllConversations = useCallback(() => {
+    setSelectedConversations(new Set(filtered.map(conv => conv._id)));
+    if (Platform.OS === 'ios') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    }
+  }, [filtered]);
+
+  const clearSelection = useCallback(() => {
+    setSelectedConversations(new Set());
+    if (Platform.OS === 'ios') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+  }, []);
+
+  // 🗑️ Bulk Operations
+  const handleBulkDelete = useCallback(() => {
+    if (selectedConversations.size === 0) return;
+
     Alert.alert(
-      "Delete Conversation",
-      "Are you sure you want to delete this conversation?",
+      `Delete ${selectedConversations.size} Conversations`,
+      "This action cannot be undone. All messages in these conversations will be permanently deleted.",
       [
         { text: "Cancel", style: "cancel" },
         { 
-          text: "Delete", 
+          text: `Delete ${selectedConversations.size} Conversations`, 
           style: "destructive",
-          onPress: () => deleteConversation(conversationId)
+          onPress: () => performBulkDelete()
         }
       ]
     );
-  };
+  }, [selectedConversations.size]);
 
-  const deleteConversation = async (conversationId) => {
+  const performBulkDelete = useCallback(async () => {
     try {
       const token = await user.getIdToken();
-      const resp = await fetch(`${API_URL}/api/messages/conversations/${conversationId}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const conversationIds = Array.from(selectedConversations);
       
-      if (resp.ok) {
-        const updated = conversations.filter(conv => conv._id !== conversationId);
-        setConversations(updated);
-        applyFilters(updated, activeFilter, searchQuery);
-        Alert.alert("Success", "Conversation deleted successfully");
-      } else {
-        const data = await resp.json();
-        Alert.alert("Error", data.error || "Failed to delete conversation");
+      // Optimistic update
+      setConversations(prev => prev.filter(conv => !selectedConversations.has(conv._id)));
+      
+      const resp = await fetch(`${API_URL}/api/messages/conversations/bulk-delete`, {
+        method: "POST",
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ conversationIds })
+      });
+
+      if (!resp.ok) {
+        throw new Error("Bulk delete failed");
+      }
+
+      if (Platform.OS === 'ios') {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
     } catch (err) {
-      console.error("Failed to delete conversation:", err);
-      Alert.alert("Error", "Failed to delete conversation");
+      // Revert on error
+      fetchConvs(true);
+      Alert.alert("Error", "Failed to delete conversations");
     }
-  };
+  }, [selectedConversations, user]);
 
-  const handleArchive = (conversationId) => {
-    Alert.alert("Archived", "Conversation archived");
-  };
+  const handleBulkArchive = useCallback(async () => {
+    try {
+      const token = await user.getIdToken();
+      const conversationIds = Array.from(selectedConversations);
+      
+      // Optimistic update
+      setConversations(prev => prev.map(conv => 
+        selectedConversations.has(conv._id) ? { ...conv, isArchived: true } : conv
+      ));
 
-  const renderRightActions = (progress, dragX, item) => {
-    const scale = dragX.interpolate({
-      inputRange: [-100, 0],
-      outputRange: [1, 0],
+      await fetch(`${API_URL}/api/messages/conversations/bulk-archive`, {
+        method: "POST",
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ conversationIds, archive: true })
+      });
+
+      if (Platform.OS === 'ios') {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+      setSelectedConversations(new Set());
+      setIsSelectionMode(false);
+    } catch (err) {
+      fetchConvs(true);
+    }
+  }, [selectedConversations, user]);
+
+  // Enhanced time formatting
+  const formatTime = useCallback((dateString) => {
+    if (!dateString) return "";
+    
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / (1000 * 60));
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    if (diffMins < 1) return "now";
+    if (diffMins < 60) return `${diffMins}m`;
+    if (diffHours < 24) return `${diffHours}h`;
+    if (diffDays === 1) return "yesterday";
+    if (diffDays < 7) return `${diffDays}d`;
+    
+    return date.toLocaleDateString("en-US", { 
+      month: "short", 
+      day: "numeric",
+      ...(date.getFullYear() !== now.getFullYear() && { year: "2-digit" })
+    });
+  }, []);
+
+  // Focus effect for data loading
+  useFocusEffect(
+    useCallback(() => {
+      fetchConvs();
+      
+      return () => {
+        swipeableRefs.current.forEach(ref => ref?.close());
+        setSearchQuery("");
+        setActiveFilter("all");
+      };
+    }, [user])
+  );
+
+  // Filter and search effect
+  useEffect(() => {
+    debouncedSearch(searchQuery, conversations, activeFilter, advancedFilters);
+  }, [conversations, activeFilter, searchQuery, advancedFilters, debouncedSearch]);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchConvs(true);
+  }, []);
+
+  const handleSearch = useCallback((q) => {
+    setSearchQuery(q);
+  }, []);
+
+  const handleFilterChange = useCallback((filter) => {
+    setActiveFilter(filter);
+    Keyboard.dismiss();
+  }, []);
+
+  const handleLoadMore = useCallback(() => {
+    if (!isLoadingMore && hasMore) {
+      fetchConvs(true, true);
+    }
+  }, [isLoadingMore, hasMore]);
+
+  // Enhanced swipe actions
+  const renderRightActions = useCallback((progress, dragX, item) => {
+    const translateX = dragX.interpolate({
+      inputRange: [-160, 0],
+      outputRange: [0, 160],
       extrapolate: 'clamp',
     });
 
     return (
       <View style={styles.swipeActions}>
-        <TouchableOpacity 
-          style={[styles.swipeAction, styles.archiveAction]}
-          onPress={() => {
-            swipeableRefs.current.get(item._id)?.close();
-            handleArchive(item._id);
-          }}
-        >
-          <Animated.View style={{ transform: [{ scale }] }}>
-            <MaterialCommunityIcons name="archive" size={24} color="#FFFFFF" />
-          </Animated.View>
-        </TouchableOpacity>
+        <Animated.View style={[styles.swipeActionWrapper, { transform: [{ translateX }] }]}>
+          <RectButton 
+            style={[styles.swipeAction, styles.archiveAction]}
+            onPress={() => {
+              swipeableRefs.current.get(item._id)?.close();
+              handleBulkArchive([item._id]);
+            }}
+          >
+            <MaterialCommunityIcons 
+              name={item.isArchived ? "archive-arrow-up" : "archive"} 
+              size={24} 
+              color="#FFFFFF" 
+            />
+            <Text style={styles.swipeActionText}>
+              {item.isArchived ? "Unarchive" : "Archive"}
+            </Text>
+          </RectButton>
+        </Animated.View>
         
-        <TouchableOpacity 
-          style={[styles.swipeAction, styles.deleteAction]}
-          onPress={() => {
-            swipeableRefs.current.get(item._id)?.close();
-            handleDelete(item._id);
-          }}
-        >
-          <Animated.View style={{ transform: [{ scale }] }}>
+        <Animated.View style={[styles.swipeActionWrapper, { transform: [{ translateX }] }]}>
+          <RectButton 
+            style={[styles.swipeAction, styles.deleteAction]}
+            onPress={() => {
+              swipeableRefs.current.get(item._id)?.close();
+              handleBulkDelete([item._id]);
+            }}
+          >
             <MaterialCommunityIcons name="delete" size={24} color="#FFFFFF" />
-          </Animated.View>
-        </TouchableOpacity>
+            <Text style={styles.swipeActionText}>Delete</Text>
+          </RectButton>
+        </Animated.View>
       </View>
     );
-  };
+  }, [handleBulkArchive, handleBulkDelete]);
 
-  const renderItem = ({ item }) => {
-    const preview = () => {
-      if (!item.lastMessage) return "Start a conversation";
-      const type = item.lastMessage.messageType;
-      if (type === "image") return "📷 Photo";
-      if (type === "product") return "🛍️ Product shared";
-      if (type === "call") return "📞 Voice call";
-      return item.lastMessage.content?.substring(0, 40) + (item.lastMessage.content?.length > 40 ? "..." : "") || "New message";
-    };
-
-    const isUnread = item.unreadCount > 0;
+  // Typing Indicator Component
+  const TypingIndicator = useCallback(({ conversationId }) => {
+    const typingData = typingUsers[conversationId];
+    if (!typingData) return null;
 
     return (
-      <Swipeable
-        ref={ref => {
-          if (ref) {
-            swipeableRefs.current.set(item._id, ref);
-          } else {
-            swipeableRefs.current.delete(item._id);
-          }
-        }}
-        renderRightActions={(progress, dragX) => renderRightActions(progress, dragX, item)}
-        rightThreshold={40}
-        friction={2}
-        overshootFriction={8}
+      <View style={styles.typingContainer}>
+        <LottieView
+          source={require('../../../assets/animations/typing.json')}
+          autoPlay
+          loop
+          style={styles.typingAnimation}
+        />
+        <Text style={styles.typingText}>
+          {typingData.username} is typing...
+        </Text>
+      </View>
+    );
+  }, [typingUsers]);
+
+  // Online Indicator Component
+  const OnlineIndicator = useCallback(({ userId }) => (
+    <View style={styles.onlineIndicator}>
+      <View style={styles.onlinePulse} />
+    </View>
+  ), []);
+
+  // Conversation Skeleton Loader
+  const ConversationSkeleton = useCallback(() => (
+    <View style={styles.skeletonCard}>
+      <View style={styles.skeletonAvatar} />
+      <View style={styles.skeletonContent}>
+        <View style={styles.skeletonLine} />
+        <View style={[styles.skeletonLine, styles.skeletonShort]} />
+        <View style={[styles.skeletonLine, styles.skeletonShorter]} />
+      </View>
+    </View>
+  ), []);
+
+  // 🎯 Enhanced renderItem with super features
+  const renderItem = useCallback(({ item, index }) => {
+    const isSelected = selectedConversations.has(item._id);
+    const isUnread = item.unreadCount > 0;
+    const isArchived = item.isArchived;
+    const isOnline = onlineUsers.has(item.otherUser?._id);
+    const isTyping = typingUsers[item._id];
+    const hasPulse = newMessagePulse === item._id;
+
+    const preview = () => {
+      if (isTyping) return <TypingIndicator conversationId={item._id} />;
+      if (!item.lastMessage) return "Start a conversation";
+      
+      const type = item.lastMessage.messageType;
+      if (type === "image") return "📷 Photo";
+      if (type === "video") return "🎥 Video";
+      if (type === "product") return "🛍️ Product shared";
+      if (type === "call") return "📞 Voice call";
+      if (type === "system") return "🔔 System message";
+      
+      return item.lastMessage.content?.substring(0, 50) + 
+        (item.lastMessage.content?.length > 50 ? "..." : "") || "New message";
+    };
+
+    return (
+      <Animated.View
+        style={[
+          styles.conversationContainer,
+          hasPulse && styles.pulseContainer,
+          isSelected && styles.selectedContainer
+        ]}
       >
-        <TouchableOpacity
-          style={[styles.card, isUnread && styles.unreadCard]}
-          onPress={() =>
-            navigation.navigate("Chat", { conversation: item, otherUser: item.otherUser })
-          }
-          activeOpacity={0.7}
-        >
-          <View style={styles.avatarContainer}>
-            {item.otherUser.profilePictureUrl ? (
-              <Image
-                source={{ uri: item.otherUser.profilePictureUrl }}
-                style={styles.avatar}
+        {isSelectionMode ? (
+          <Pressable
+            style={[styles.card, isSelected && styles.selectedCard]}
+            onPress={() => toggleConversationSelection(item._id)}
+            onLongPress={toggleSelectionMode}
+            delayLongPress={300}
+          >
+            <View style={styles.selectionCheckbox}>
+              <MaterialCommunityIcons 
+                name={isSelected ? "check-circle" : "circle-outline"} 
+                size={24} 
+                color={isSelected ? "#2F6F61" : "#C7C7CC"} 
               />
-            ) : (
-              <View style={styles.placeholderAvatar}>
-                <Text style={styles.placeholderInitial}>
-                  {item.otherUser.username?.charAt(0).toUpperCase()}
-                </Text>
-              </View>
-            )}
-            {isUnread && <View style={styles.unreadBadge} />}
-          </View>
-          
-          <View style={styles.content}>
-            <View style={styles.headerRow}>
-              <Text style={[styles.username, isUnread && styles.unreadText]} numberOfLines={1}>
-                {item.otherUser.username}
-              </Text>
-              {item.lastMessage && (
-                <Text style={[styles.time, isUnread && styles.unreadTime]}>
-                  {formatTime(item.lastMessage.sentDate)}
-                </Text>
+            </View>
+            
+            <View style={styles.avatarContainer}>
+              {item.otherUser?.profilePictureUrl ? (
+                <Image
+                  source={{ uri: item.otherUser.profilePictureUrl }}
+                  style={styles.avatar}
+                />
+              ) : (
+                <LinearGradient
+                  colors={['#2F6F61', '#3A7B6C']}
+                  style={styles.placeholderAvatar}
+                >
+                  <Text style={styles.placeholderInitial}>
+                    {item.otherUser?.username?.charAt(0)?.toUpperCase() || "U"}
+                  </Text>
+                </LinearGradient>
               )}
             </View>
             
-            {item.product && (
-              <Text style={styles.aboutText} numberOfLines={1}>
-                💬 About: {item.product.title}
+            <View style={styles.content}>
+              <Text style={styles.username} numberOfLines={1}>
+                {item.otherUser?.username || "Unknown User"}
               </Text>
-            )}
-            
-            <View style={styles.messageRow}>
-              <Text 
-                style={[styles.messageText, isUnread && styles.unreadText]} 
-                numberOfLines={1}
-              >
+              <Text style={styles.messageText} numberOfLines={1}>
                 {preview()}
               </Text>
-              {item.lastMessage?.messageType === "image" && (
-                <MaterialCommunityIcons name="image" size={16} color="#8E8E93" />
-              )}
             </View>
-            
-            {isUnread && (
-              <View style={styles.unreadCountBadge}>
-                <Text style={styles.unreadCountText}>
-                  {item.unreadCount > 99 ? '99+' : item.unreadCount}
-                </Text>
+          </Pressable>
+        ) : (
+          <Swipeable
+            ref={ref => swipeableRefs.current.set(item._id, ref)}
+            renderRightActions={(progress, dragX) => renderRightActions(progress, dragX, item)}
+            rightThreshold={40}
+            friction={2}
+            overshootFriction={8}
+            onSwipeableOpen={(direction) => {
+              if (direction === 'right' && Platform.OS === 'ios') {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              }
+            }}
+          >
+            <Pressable
+              style={[
+                styles.card,
+                isUnread && styles.unreadCard,
+                isArchived && styles.archivedCard,
+              ]}
+              onPress={() => {
+                navigation.navigate("Chat", { 
+                  conversation: item, 
+                  otherUser: item.otherUser,
+                  product: item.product 
+                });
+              }}
+              onLongPress={toggleSelectionMode}
+              delayLongPress={500}
+              android_ripple={{ color: 'rgba(47, 111, 97, 0.1)' }}
+            >
+              <View style={styles.avatarContainer}>
+                {item.otherUser?.profilePictureUrl ? (
+                  <Image
+                    source={{ uri: item.otherUser.profilePictureUrl }}
+                    style={styles.avatar}
+                  />
+                ) : (
+                  <LinearGradient
+                    colors={['#2F6F61', '#3A7B6C']}
+                    style={styles.placeholderAvatar}
+                  >
+                    <Text style={styles.placeholderInitial}>
+                      {item.otherUser?.username?.charAt(0)?.toUpperCase() || "U"}
+                    </Text>
+                  </LinearGradient>
+                )}
+                {isOnline && <OnlineIndicator userId={item.otherUser?._id} />}
+                {isUnread && <View style={styles.unreadBadge} />}
+                {isArchived && (
+                  <View style={styles.archivedBadge}>
+                    <MaterialCommunityIcons name="archive" size={12} color="#FFFFFF" />
+                  </View>
+                )}
               </View>
-            )}
-          </View>
+              
+              <View style={styles.content}>
+                <View style={styles.headerRow}>
+                  <Text style={[styles.username, isUnread && styles.unreadText]} numberOfLines={1}>
+                    {item.otherUser?.username || "Unknown User"}
+                    {item.isGroupChat && " 👥"}
+                  </Text>
+                  <View style={styles.headerRight}>
+                    {item.lastMessage && (
+                      <Text style={[styles.time, isUnread && styles.unreadTime]}>
+                        {formatTime(item.lastMessage.sentDate || item.updatedAt)}
+                      </Text>
+                    )}
+                  </View>
+                </View>
+                
+                {item.product && (
+                  <Text style={styles.aboutText} numberOfLines={1}>
+                    💬 About: {item.product.title}
+                  </Text>
+                )}
+                
+                <View style={styles.messageRow}>
+                  <Text 
+                    style={[
+                      styles.messageText, 
+                      isUnread && styles.unreadText,
+                      isArchived && styles.archivedText,
+                      isTyping && styles.typingMessageText
+                    ]} 
+                    numberOfLines={1}
+                  >
+                    {preview()}
+                  </Text>
+                  {item.lastMessage?.messageType === "image" && (
+                    <MaterialCommunityIcons name="image" size={16} color="#8E8E93" />
+                  )}
+                </View>
+                
+                {isUnread && !isTyping && (
+                  <View style={styles.unreadCountBadge}>
+                    <Text style={styles.unreadCountText}>
+                      {item.unreadCount > 99 ? '99+' : item.unreadCount}
+                    </Text>
+                  </View>
+                )}
+              </View>
 
-          {item.product?.imagesUrls?.[0] && (
-            <Image
-              source={{ uri: item.product.imagesUrls[0] }}
-              style={styles.productThumb}
-            />
-          )}
+              {item.product?.imagesUrls?.[0] && (
+                <Image
+                  source={{ uri: item.product.imagesUrls[0] }}
+                  style={styles.productThumb}
+                />
+              )}
 
-          <MaterialCommunityIcons 
-            name="chevron-right" 
-            size={20} 
-            color="#C7C7CC" 
-            style={styles.chevron}
-          />
-        </TouchableOpacity>
-      </Swipeable>
+              <MaterialCommunityIcons 
+                name="chevron-right" 
+                size={20} 
+                color="#C7C7CC" 
+                style={styles.chevron}
+              />
+            </Pressable>
+          </Swipeable>
+        )}
+      </Animated.View>
     );
-  };
+  }, [
+    selectedConversations, 
+    onlineUsers, 
+    typingUsers, 
+    newMessagePulse, 
+    isSelectionMode,
+    navigation,
+    toggleConversationSelection,
+    toggleSelectionMode,
+    formatTime
+  ]);
 
-  const FilterButton = ({ label, filter, icon }) => (
-    <TouchableOpacity
-      style={[styles.filterBtn, activeFilter === filter && styles.filterBtnActive]}
-      onPress={() => handleFilterChange(filter)}
-    >
-      <MaterialCommunityIcons 
-        name={icon} 
-        size={16} 
-        color={activeFilter === filter ? "#FFFFFF" : "#2F6F61"} 
-      />
-      <Text style={[styles.filterText, activeFilter === filter && styles.filterTextActive]}>
-        {label}
-      </Text>
-    </TouchableOpacity>
-  );
+  const currentStatus = connectionConfig[connectionStatus];
+  const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
 
   return (
     <Layout>
       <StatusBar barStyle="dark-content" backgroundColor="#F5F7F6" />
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.pageTitle}>Messages</Text>
-          <Text style={styles.subtitle}>Connect with buyers & sellers</Text>
-          
-          {/* ✅ Socket connection status */}
-          <View style={styles.statusIndicator}>
-            <View style={[styles.onlineIndicator, !isConnected && styles.offlineIndicator]} />
-            <Text style={[styles.statusText, !isConnected && styles.offlineText]}>
-              {isConnected ? 'Live updates active' : 'Reconnecting...'}
-            </Text>
-          </View>
-        </View>
-
-        <View style={styles.searchSection}>
-          <View style={styles.searchBox}>
-            <MaterialCommunityIcons name="magnify" size={20} color="#8E8E93" />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search conversations..."
-              placeholderTextColor="#8E8E93"
-              value={searchQuery}
-              onChangeText={handleSearch}
-            />
-            {searchQuery.length > 0 && (
-              <TouchableOpacity onPress={() => handleSearch("")}>
-                <MaterialCommunityIcons name="close-circle" size={18} color="#8E8E93" />
+      
+      {/* Animated Header */}
+      <Animated.View style={[styles.header, { opacity: headerOpacity }]}>
+        <View style={styles.headerTop}>
+          {isSelectionMode ? (
+            <View style={styles.selectionHeader}>
+              <TouchableOpacity onPress={toggleSelectionMode} style={styles.headerButton}>
+                <MaterialCommunityIcons name="close" size={24} color="#1A1A1C" />
               </TouchableOpacity>
-            )}
-          </View>
-
-          <View style={styles.filterContainer}>
-            <FilterButton label="All" filter="all" icon="message-text" />
-            <FilterButton label="Unread" filter="unread" icon="message-badge" />
-            <FilterButton label="Groups" filter="groups" icon="account-group" />
-          </View>
+              <Text style={styles.selectionTitle}>
+                {selectedConversations.size} selected
+              </Text>
+              <View style={styles.selectionActions}>
+                <TouchableOpacity onPress={selectAllConversations} style={styles.headerButton}>
+                  <MaterialCommunityIcons name="select-all" size={24} color="#2F6F61" />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={handleBulkArchive} style={styles.headerButton}>
+                  <MaterialCommunityIcons name="archive" size={24} color="#FF9500" />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={handleBulkDelete} style={styles.headerButton}>
+                  <MaterialCommunityIcons name="delete" size={24} color="#FF3B30" />
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : (
+            <>
+              <View>
+                <Text style={styles.pageTitle}>Messages</Text>
+                <Text style={styles.subtitle}>Connect with buyers & sellers</Text>
+              </View>
+              <View style={styles.headerActions}>
+                <TouchableOpacity onPress={() => setShowFiltersModal(true)} style={styles.headerButton}>
+                  <MaterialCommunityIcons name="filter-variant" size={24} color="#2F6F61" />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={toggleSelectionMode} style={styles.headerButton}>
+                  <MaterialCommunityIcons name="select" size={24} color="#2F6F61" />
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={styles.newChatButton}
+                  onPress={() => navigation.navigate("NewChat")}
+                >
+                  <MaterialCommunityIcons name="plus" size={20} color="#FFFFFF" />
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
         </View>
 
-        <View style={styles.countContainer}>
-          <Text style={styles.countText}>
-            {filtered.length} conversation{filtered.length !== 1 ? 's' : ''}
-            {activeFilter === 'unread' && filtered.length > 0 && ' unread'}
+        {/* Enhanced Connection Status */}
+        <LinearGradient
+          colors={currentStatus.gradient}
+          style={styles.statusContainer}
+        >
+          <MaterialCommunityIcons 
+            name={currentStatus.icon} 
+            size={16} 
+            color="#FFFFFF" 
+          />
+          <Text style={styles.statusText}>
+            {currentStatus.text}
           </Text>
+          {connectionStatus === "error" && (
+            <TouchableOpacity onPress={() => fetchConvs()}>
+              <Text style={styles.retryText}>RETRY</Text>
+            </TouchableOpacity>
+          )}
+        </LinearGradient>
+      </Animated.View>
+
+      {/* Enhanced Search Section */}
+      <Animated.View style={[styles.searchSection, searchFocused && styles.searchSectionFocused]}>
+        <View style={styles.searchBox}>
+          <MaterialCommunityIcons name="magnify" size={20} color="#8E8E93" />
+          <TextInput
+            ref={searchInputRef}
+            style={styles.searchInput}
+            placeholder="Search conversations, products, messages..."
+            placeholderTextColor="#8E8E93"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            onFocus={() => setSearchFocused(true)}
+            onBlur={() => setSearchFocused(false)}
+            returnKeyType="search"
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery("")}>
+              <MaterialCommunityIcons name="close-circle" size={18} color="#8E8E93" />
+            </TouchableOpacity>
+          )}
         </View>
 
-        {filtered.length === 0 ? (
-          <View style={styles.emptyState}>
-            <MaterialCommunityIcons name="message-outline" size={80} color="#E0E6E3" />
-            <Text style={styles.emptyTitle}>
-              {searchQuery || activeFilter !== "all" ? "No matches found" : "No conversations yet"}
-            </Text>
-            <Text style={styles.emptySubtitle}>
-              {searchQuery || activeFilter !== "all" 
-                ? "Try adjusting your search or filter" 
-                : "Start chatting by messaging sellers from product pages"}
-            </Text>
-            {(searchQuery || activeFilter !== "all") && (
-              <TouchableOpacity 
-                style={styles.resetButton}
-                onPress={() => {
-                  setSearchQuery("");
-                  setActiveFilter("all");
-                }}
-              >
-                <Text style={styles.resetButtonText}>Show all conversations</Text>
-              </TouchableOpacity>
-            )}
+        {/* Quick Filters */}
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          style={styles.filterContainer}
+        >
+          <FilterButton 
+            label="All" 
+            filter="all" 
+            icon="message-text" 
+            active={activeFilter === "all"}
+            onPress={handleFilterChange}
+          />
+          <FilterButton 
+            label="Unread" 
+            filter="unread" 
+            icon="message-badge" 
+            active={activeFilter === "unread"}
+            onPress={handleFilterChange}
+          />
+          <FilterButton 
+            label="Groups" 
+            filter="groups" 
+            icon="account-group" 
+            active={activeFilter === "groups"}
+            onPress={handleFilterChange}
+          />
+          <FilterButton 
+            label="Archived" 
+            filter="archived" 
+            icon="archive" 
+            active={activeFilter === "archived"}
+            onPress={handleFilterChange}
+          />
+        </ScrollView>
+      </Animated.View>
+
+      {/* Enhanced Conversation List */}
+      <View style={styles.listContainer}>
+        {isLoading && filtered.length === 0 ? (
+          <View style={styles.loadingContainer}>
+            {Array.from({ length: 8 }).map((_, index) => (
+              <ConversationSkeleton key={index} />
+            ))}
           </View>
         ) : (
-          <FlatList
+          <Animated.FlatList
+            ref={listRef}
             data={filtered}
-            keyExtractor={(i) => i._id}
+            keyExtractor={(item) => item._id}
             renderItem={renderItem}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+            refreshControl={
+              <RefreshControl 
+                refreshing={refreshing} 
+                onRefresh={onRefresh}
+                colors={["#2F6F61"]}
+                tintColor="#2F6F61"
+                progressViewOffset={Platform.OS === 'android' ? 40 : 0}
+              />
+            }
+            ListEmptyComponent={
+              <View style={styles.emptyState}>
+                <LottieView
+                  source={require('../../../assets/animations/empty-chat.json')}
+                  autoPlay
+                  loop
+                  style={styles.emptyAnimation}
+                />
+                <Text style={styles.emptyTitle}>
+                  {searchQuery || activeFilter !== "all" ? "No matches found" : "No conversations yet"}
+                </Text>
+                <Text style={styles.emptySubtitle}>
+                  {searchQuery || activeFilter !== "all" 
+                    ? "Try adjusting your search or filter" 
+                    : "Start chatting by messaging sellers from product pages"}
+                </Text>
+                {(searchQuery || activeFilter !== "all") && (
+                  <TouchableOpacity 
+                    style={styles.resetButton}
+                    onPress={() => {
+                      setSearchQuery("");
+                      setActiveFilter("all");
+                      searchInputRef.current?.focus();
+                    }}
+                  >
+                    <Text style={styles.resetButtonText}>Show all conversations</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            }
+            ListFooterComponent={
+              isLoadingMore ? (
+                <View style={styles.footer}>
+                  <ActivityIndicator size="large" color="#2F6F61" />
+                  <Text style={styles.footerText}>Loading more conversations...</Text>
+                </View>
+              ) : null
+            }
+            onEndReached={handleLoadMore}
+            onEndReachedThreshold={0.3}
+            scrollEventThrottle={16}
+            onScroll={Animated.event(
+              [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+              { useNativeDriver: true }
+            )}
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
-            removeClippedSubviews={true}
-            maxToRenderPerBatch={10}
-            windowSize={10}
-            initialNumToRender={10}
+            removeClippedSubviews={Platform.OS === 'android'}
+            maxToRenderPerBatch={12}
+            updateCellsBatchingPeriod={50}
+            windowSize={21}
+            initialNumToRender={12}
           />
         )}
       </View>
+
+      {/* Advanced Filters Modal */}
+      <Modal
+        visible={showFiltersModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowFiltersModal(false)}
+      >
+        <AdvancedFiltersModal
+          filters={advancedFilters}
+          onFiltersChange={setAdvancedFilters}
+          onClose={() => setShowFiltersModal(false)}
+          onApply={() => {
+            setShowFiltersModal(false);
+            applyFilters(conversations, activeFilter, searchQuery, advancedFilters);
+          }}
+        />
+      </Modal>
+
+      {/* Selection Mode FAB */}
+      {isSelectionMode && selectedConversations.size > 0 && (
+        <AnimatedTouchable
+          style={[styles.fab, styles.deleteFab]}
+          onPress={handleBulkDelete}
+          activeOpacity={0.8}
+        >
+          <MaterialCommunityIcons name="delete" size={24} color="#FFFFFF" />
+          <Text style={styles.fabText}>{selectedConversations.size}</Text>
+        </AnimatedTouchable>
+      )}
     </Layout>
   );
 }
@@ -540,18 +1440,29 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#F5F7F6",
-    marginHorizontal:-14,
-    marginVertical:-12,
-    borderTopLeftRadius:12,
-    borderTopRightRadius:12,
   },
   header: {
-    paddingHorizontal: 14,
-    paddingTop: 16,
-    paddingBottom: 8,
+    backgroundColor: '#F5F7F6',
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
+    paddingHorizontal: 20,
+    paddingBottom: 10,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+    zIndex: 1000,
+  },
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
   },
   pageTitle: {
-    fontSize: 32,
+    fontSize: 34,
     fontWeight: "800",
     color: "#1A1A1C",
     letterSpacing: -0.5,
@@ -561,32 +1472,82 @@ const styles = StyleSheet.create({
     color: "#8E8E93",
     marginTop: 4,
   },
-  statusIndicator: {
+  headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 12,
+  },
+  headerButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  newChatButton: {
+    backgroundColor: "#2F6F61",
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  selectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flex: 1,
+  },
+  selectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1A1A1C',
+    flex: 1,
+    textAlign: 'center',
+  },
+  selectionActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  statusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
     marginTop: 8,
   },
-  onlineIndicator: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#4CAF50',
-    marginRight: 6,
-  },
-  offlineIndicator: {
-    backgroundColor: '#FF9500',
-  },
   statusText: {
+    color: '#FFFFFF',
     fontSize: 12,
-    color: '#4CAF50',
-    fontWeight: '500',
+    fontWeight: '600',
+    marginLeft: 6,
+    flex: 1,
   },
-  offlineText: {
-    color: '#FF9500',
+  retryText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
   },
   searchSection: {
     paddingHorizontal: 20,
     paddingVertical: 12,
+    backgroundColor: '#F5F7F6',
+  },
+  searchSectionFocused: {
+    backgroundColor: '#FFFFFF',
   },
   searchBox: {
     flexDirection: "row",
@@ -611,8 +1572,7 @@ const styles = StyleSheet.create({
   },
   filterContainer: {
     flexDirection: "row",
-    justifyContent: "space-around",
-    marginTop: 8,
+    gap: 8,
   },
   filterBtn: {
     flexDirection: "row",
@@ -625,6 +1585,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 4,
     elevation: 2,
+    marginRight: 8,
   },
   filterBtnActive: {
     backgroundColor: "#2F6F61",
@@ -638,20 +1599,29 @@ const styles = StyleSheet.create({
   filterTextActive: {
     color: "#FFFFFF",
   },
-  countContainer: {
-    paddingHorizontal: 20,
-    paddingBottom: 8,
+  listContainer: {
+    flex: 1,
+    backgroundColor: '#F5F7F6',
   },
-  countText: {
-    fontSize: 14,
-    color: "#8E8E93",
-    fontWeight: '500',
+  loadingContainer: {
+    padding: 20,
   },
   listContent: {
     paddingHorizontal: 15,
     paddingTop: 8,
-    paddingBottom: 20,
+    paddingBottom: 100,
     flexGrow: 1,
+  },
+  conversationContainer: {
+    marginVertical: 4,
+    borderRadius: 20,
+    overflow: 'hidden',
+  },
+  pulseContainer: {
+    backgroundColor: 'rgba(47, 111, 97, 0.05)',
+  },
+  selectedContainer: {
+    backgroundColor: 'rgba(47, 111, 97, 0.1)',
   },
   card: {
     flexDirection: "row",
@@ -659,20 +1629,29 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     borderRadius: 20,
     padding: 16,
-    marginVertical: 6,
+    minHeight: 90,
+    borderLeftWidth: 4,
+    borderLeftColor: "transparent",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.03,
     shadowRadius: 6,
     elevation: 2,
-    borderLeftWidth: 4,
-    borderLeftColor: "transparent",
-    minHeight: 90,
+  },
+  selectedCard: {
+    backgroundColor: 'rgba(47, 111, 97, 0.05)',
+    borderLeftColor: '#2F6F61',
   },
   unreadCard: {
     borderLeftColor: "#2F6F61",
     backgroundColor: "#F8FFFD",
-    shadowOpacity: 0.08,
+  },
+  archivedCard: {
+    opacity: 0.7,
+    backgroundColor: "#F8F9FA",
+  },
+  selectionCheckbox: {
+    marginRight: 12,
   },
   avatarContainer: {
     position: "relative",
@@ -689,7 +1668,6 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: "#2F6F61",
     justifyContent: "center",
     alignItems: "center",
   },
@@ -697,6 +1675,23 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 22,
     fontWeight: "700",
+  },
+  onlineIndicator: {
+    position: "absolute",
+    bottom: 2,
+    right: 2,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#4CAF50',
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
+  },
+  onlinePulse: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 7,
+    backgroundColor: '#4CAF50',
   },
   unreadBadge: {
     position: "absolute",
@@ -709,6 +1704,19 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: "#FFFFFF",
   },
+  archivedBadge: {
+    position: "absolute",
+    bottom: -2,
+    right: -2,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: "#8E8E93",
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
+  },
   content: {
     flex: 1,
     position: 'relative',
@@ -718,6 +1726,10 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 4,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   username: {
     fontSize: 17,
@@ -754,6 +1766,13 @@ const styles = StyleSheet.create({
     flex: 1,
     marginRight: 8,
   },
+  archivedText: {
+    color: "#8E8E93",
+  },
+  typingMessageText: {
+    color: '#2F6F61',
+    fontWeight: '500',
+  },
   unreadCountBadge: {
     position: 'absolute',
     top: -5,
@@ -782,11 +1801,61 @@ const styles = StyleSheet.create({
   chevron: {
     marginLeft: 8,
   },
+  typingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  typingAnimation: {
+    width: 20,
+    height: 20,
+    marginRight: 6,
+  },
+  typingText: {
+    fontSize: 14,
+    color: '#2F6F61',
+    fontStyle: 'italic',
+  },
+  skeletonCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 16,
+    marginVertical: 4,
+    minHeight: 90,
+  },
+  skeletonAvatar: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: "#E0E6E3",
+    marginRight: 16,
+  },
+  skeletonContent: {
+    flex: 1,
+  },
+  skeletonLine: {
+    height: 16,
+    backgroundColor: '#E0E6E3',
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  skeletonShort: {
+    width: '70%',
+  },
+  skeletonShorter: {
+    width: '50%',
+  },
   emptyState: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 40,
+    paddingVertical: 60,
+  },
+  emptyAnimation: {
+    width: 200,
+    height: 200,
   },
   emptyTitle: {
     fontSize: 22,
@@ -814,6 +1883,17 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
   },
+  footer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
+  },
+  footerText: {
+    marginLeft: 8,
+    fontSize: 14,
+    color: '#8E8E93',
+  },
   swipeActions: {
     flexDirection: "row",
     width: 160,
@@ -822,15 +1902,177 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     overflow: "hidden",
   },
+  swipeActionWrapper: {
+    flex: 1,
+  },
   swipeAction: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+    paddingHorizontal: 10,
   },
   archiveAction: {
     backgroundColor: "#FF9500",
   },
   deleteAction: {
     backgroundColor: "#FF3B30",
+  },
+  swipeActionText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  fab: {
+    position: 'absolute',
+    bottom: 30,
+    right: 20,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  deleteFab: {
+    backgroundColor: '#FF3B30',
+  },
+  fabText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+    position: 'absolute',
+    top: 8,
+    right: 8,
+  },
+  // Modal Styles
+  modalContainer: {
+    flex: 1,
+    backgroundColor: '#F5F7F6',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
+    paddingBottom: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E6E3',
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#1A1A1C',
+  },
+  closeButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  modalContent: {
+    flex: 1,
+    padding: 20,
+  },
+  filterSection: {
+    marginBottom: 30,
+  },
+  filterSectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1A1A1C',
+    marginBottom: 16,
+  },
+  filterOption: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  filterLabel: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#1A1A1C',
+    marginBottom: 4,
+  },
+  filterDescription: {
+    fontSize: 14,
+    color: '#8E8E93',
+  },
+  radioOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  radioOptionSelected: {
+    backgroundColor: 'rgba(47, 111, 97, 0.05)',
+  },
+  radioCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: '#2F6F61',
+    marginRight: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  radioInner: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#2F6F61',
+  },
+  radioLabel: {
+    fontSize: 16,
+    color: '#1A1A1C',
+  },
+  radioLabelSelected: {
+    fontWeight: '600',
+    color: '#2F6F61',
+  },
+  modalFooter: {
+    flexDirection: 'row',
+    padding: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#E0E6E3',
+    gap: 12,
+  },
+  primaryButton: {
+    flex: 1,
+    backgroundColor: '#2F6F61',
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  primaryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  secondaryButton: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E0E6E3',
+  },
+  secondaryButtonText: {
+    color: '#2F6F61',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
