@@ -1,5 +1,5 @@
-// frontend/src/screens/Chat/ChatListScreen.js - SUPER DUPER ENHANCED VERSION
-import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
+// frontend/src/screens/Chat/ChatListScreen.js - FIXED VERSION
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -24,26 +24,22 @@ import {
   Switch,
   Vibration
 } from "react-native";
-import { useFocusEffect, useNavigation, useRoute } from "@react-navigation/native";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useAuth } from "../../context/AuthContext";
 import { API_URL } from "../../constants/config";
 import Layout from "../../components/Layouts";
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
 import Swipeable from "react-native-gesture-handler/Swipeable";
-import { RectButton, State } from "react-native-gesture-handler";
+import { RectButton } from "react-native-gesture-handler";
 import io from "socket.io-client";
-import { debounce, throttle } from "lodash";
-import LinearGradient from 'react-native-linear-gradient';
-import * as Haptics from 'expo-haptics';
-import { BlurView } from 'expo-blur';
-import LottieView from 'lottie-react-native';
+import { debounce } from "lodash";
 
 // Enable LayoutAnimation for Android
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-const { width, height } = Dimensions.get('window');
+const { width } = Dimensions.get('window');
 const ANIMATION_CONFIG = {
   duration: 300,
   create: {
@@ -218,7 +214,6 @@ const FilterButton = React.memo(({ label, filter, icon, active, onPress }) => (
 export default function ChatListScreen() {
   const { user } = useAuth();
   const navigation = useNavigation();
-  const route = useRoute();
   
   // Enhanced State Management
   const [conversations, setConversations] = useState([]);
@@ -252,47 +247,37 @@ export default function ChatListScreen() {
   const socketRef = useRef(null);
   const listRef = useRef(null);
   const searchInputRef = useRef(null);
-  const pulseAnimation = useRef(new Animated.Value(0)).current;
-  const scrollY = useRef(new Animated.Value(0)).current;
-  const headerOpacity = useRef(new Animated.Value(1)).current;
   const lastMessageTime = useRef({});
 
-  // Connection status with enhanced visual feedback
+  // Connection status configuration
   const connectionConfig = {
     connected: { 
       color: "#4CAF50", 
       text: "Live • Real-time updates", 
       icon: "wifi-strength-4",
-      gradient: ['#4CAF50', '#45a049']
     },
     connecting: { 
       color: "#FF9500", 
       text: "Connecting...", 
       icon: "wifi-strength-2",
-      gradient: ['#FF9500', '#e68900']
     },
     disconnected: { 
       color: "#FF3B30", 
       text: "Reconnecting...", 
       icon: "wifi-strength-1",
-      gradient: ['#FF3B30', '#e53328']
     },
     error: { 
       color: "#FF3B30", 
       text: "Connection failed", 
       icon: "wifi-off",
-      gradient: ['#FF3B30', '#d32f2f']
     }
   };
 
-  // 🚀 SUPER ENHANCED Socket.IO with Advanced Features
+  // Socket.IO initialization
   useEffect(() => {
     const initSocket = async () => {
       try {
         setConnectionStatus("connecting");
-        if (Platform.OS === 'ios') {
-          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-        }
         
         const token = await user?.getIdToken?.();
         
@@ -309,21 +294,14 @@ export default function ChatListScreen() {
           reconnectionDelay: 1000,
           reconnectionDelayMax: 5000,
           timeout: 20000,
-          forceNew: true,
-          multiplex: false
         });
 
-        // Enhanced event handlers
         const socket = socketRef.current;
 
         socket.on('connect', () => {
-          console.log('🚀 ChatList socket connected with ID:', socket.id);
+          console.log('🚀 ChatList socket connected');
           setIsConnected(true);
           setConnectionStatus("connected");
-          if (Platform.OS === 'ios') {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          }
-          triggerPulseAnimation();
         });
 
         socket.on('disconnect', (reason) => {
@@ -335,36 +313,33 @@ export default function ChatListScreen() {
         socket.on('connect_error', (error) => {
           console.error('Socket connection error:', error);
           setConnectionStatus("error");
-          if (Platform.OS === 'ios') {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-          }
         });
 
-        socket.on('reconnect_attempt', (attempt) => {
-          console.log(`🔄 Reconnection attempt ${attempt}`);
+        socket.on('reconnect_attempt', () => {
           setConnectionStatus("connecting");
         });
 
         socket.on('reconnect_failed', () => {
-          console.error('Socket reconnection failed');
           setConnectionStatus("error");
         });
 
-        // 🆕 REAL-TIME EVENTS
+        // Real-time events
         socket.on('newMessage', (message) => {
           handleNewMessage(message);
-          triggerMessageNotification(message);
+          if (Platform.OS === 'android') {
+            Vibration.vibrate(50);
+          }
         });
 
         socket.on('conversationUpdated', ({ conversationId, update }) => {
           handleConversationUpdate(conversationId, update);
         });
 
-        socket.on('messageDeleted', ({ messageId, conversationId }) => {
+        socket.on('messageDeleted', ({ conversationId }) => {
           handleMessageDeletion(conversationId);
         });
 
-        socket.on('messagesRead', ({ conversationId, messageIds, readBy }) => {
+        socket.on('messagesRead', ({ conversationId, messageIds }) => {
           handleMessagesRead(conversationId, messageIds);
         });
 
@@ -376,16 +351,12 @@ export default function ChatListScreen() {
           handleUserTyping(conversationId, userId, isTyping, username);
         });
 
-        socket.on('userOnlineStatus', ({ userId, isOnline, lastSeen }) => {
+        socket.on('userOnlineStatus', ({ userId, isOnline }) => {
           handleUserOnlineStatus(userId, isOnline);
         });
 
         socket.on('conversationArchived', ({ conversationId, archived }) => {
           handleConversationArchive(conversationId, archived);
-        });
-
-        socket.on('bulkDeleteComplete', ({ deletedCount }) => {
-          handleBulkDeleteComplete(deletedCount);
         });
 
         socket.on('newUnreadCount', ({ conversationId, unreadCount }) => {
@@ -410,37 +381,7 @@ export default function ChatListScreen() {
     };
   }, [user]);
 
-  // 🎬 Pulse animation for new messages
-  const triggerPulseAnimation = useCallback(() => {
-    pulseAnimation.setValue(0);
-    Animated.sequence([
-      Animated.timing(pulseAnimation, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-      Animated.timing(pulseAnimation, {
-        toValue: 0,
-        duration: 800,
-        useNativeDriver: true,
-      })
-    ]).start();
-  }, [pulseAnimation]);
-
-  const triggerMessageNotification = useCallback((message) => {
-    if (Platform.OS === 'ios') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    } else {
-      Vibration.vibrate(50);
-    }
-    
-    setNewMessagePulse(message.conversationId);
-    setTimeout(() => setNewMessagePulse(null), 2000);
-    
-    triggerPulseAnimation();
-  }, [triggerPulseAnimation]);
-
-  // 🆕 Enhanced message handling with animations
+  // Enhanced message handling
   const handleNewMessage = useCallback((message) => {
     LayoutAnimation.configureNext(ANIMATION_CONFIG);
     
@@ -479,16 +420,16 @@ export default function ChatListScreen() {
         };
 
         updated[existingConvIndex] = updatedConv;
-
-        // Move to top with animation
         const [movedConv] = updated.splice(existingConvIndex, 1);
         return [movedConv, ...updated];
       } else {
-        // New conversation - fetch updated list
         setTimeout(() => fetchConvs(true), 100);
         return prev;
       }
     });
+
+    setNewMessagePulse(message.conversationId);
+    setTimeout(() => setNewMessagePulse(null), 2000);
   }, [user]);
 
   const handleUserTyping = useCallback((conversationId, userId, isTyping, username) => {
@@ -514,13 +455,6 @@ export default function ChatListScreen() {
     setConversations(prev => prev.map(conv => 
       conv._id === conversationId ? { ...conv, isArchived: archived } : conv
     ));
-  }, []);
-
-  const handleBulkDeleteComplete = useCallback((deletedCount) => {
-    Alert.alert("Success", `${deletedCount} conversations deleted successfully`);
-    setSelectedConversations(new Set());
-    setIsSelectionMode(false);
-    fetchConvs(true);
   }, []);
 
   const updateUnreadCount = useCallback((conversationId, unreadCount) => {
@@ -557,11 +491,11 @@ export default function ChatListScreen() {
     }));
   }, []);
 
-  const handleMessageDeletion = useCallback((conversationId) => {
+  const handleMessageDeletion = useCallback(() => {
     fetchConvs(true);
   }, []);
 
-  // 🚀 Enhanced data fetching with caching
+  // Data fetching
   const fetchConvs = useCallback(async (silent = false, loadMore = false) => {
     if (!user) return;
 
@@ -577,7 +511,6 @@ export default function ChatListScreen() {
       const queryParams = new URLSearchParams({
         page: loadMore ? page + 1 : 1,
         limit: '25',
-        include: 'onlineStatus,typingStatus',
         sort: 'updatedAt:desc'
       });
 
@@ -617,15 +550,10 @@ export default function ChatListScreen() {
           setPage(1);
           setHasMore(data.hasMore || false);
         }
-
-        // Update online users
-        if (data.onlineUsers) {
-          setOnlineUsers(new Set(data.onlineUsers));
-        }
       }
     } catch (err) {
       if (!silent && err.name !== 'AbortError') {
-        Alert.alert("Connection Error", "Unable to load conversations. Please check your connection.");
+        Alert.alert("Connection Error", "Unable to load conversations.");
       }
     } finally {
       setIsLoading(false);
@@ -634,17 +562,16 @@ export default function ChatListScreen() {
     }
   }, [user, page]);
 
-  // 🎯 Super Advanced Search & Filtering
+  // Search & Filtering
   const debouncedSearch = useRef(
-    debounce((query, convos, filter, advancedFilters) => {
-      applyFilters(convos, filter, query, advancedFilters);
+    debounce((query, convos, filter, advFilters) => {
+      applyFilters(convos, filter, query, advFilters);
     }, 400)
   ).current;
 
-  const applyFilters = useCallback((convos, filter, query, advancedFilters) => {
+  const applyFilters = useCallback((convos, filter, query, advFilters) => {
     let filteredList = convos;
     
-    // Apply main filter
     switch (filter) {
       case "unread":
         filteredList = filteredList.filter(conv => conv.unreadCount > 0);
@@ -659,23 +586,21 @@ export default function ChatListScreen() {
         break;
     }
 
-    // Apply advanced filters
-    if (advancedFilters.unreadOnly) {
+    if (advFilters.unreadOnly) {
       filteredList = filteredList.filter(conv => conv.unreadCount > 0);
     }
-    if (advancedFilters.withMedia) {
+    if (advFilters.withMedia) {
       filteredList = filteredList.filter(conv => 
         conv.lastMessage?.messageType === 'image' || 
         conv.lastMessage?.messageType === 'video'
       );
     }
-    if (advancedFilters.withProducts) {
+    if (advFilters.withProducts) {
       filteredList = filteredList.filter(conv => conv.product != null);
     }
 
-    // Apply date range filter
     const now = new Date();
-    switch (advancedFilters.dateRange) {
+    switch (advFilters.dateRange) {
       case 'today':
         filteredList = filteredList.filter(conv => {
           const convDate = new Date(conv.updatedAt);
@@ -692,21 +617,18 @@ export default function ChatListScreen() {
         break;
     }
 
-    // Apply search query
     if (query.trim()) {
       const lower = query.toLowerCase();
       filteredList = filteredList.filter(conv => {
         const usernameMatch = conv.otherUser?.username?.toLowerCase().includes(lower);
         const productMatch = conv.product?.title?.toLowerCase().includes(lower);
         const lastMessageMatch = conv.lastMessage?.content?.toLowerCase().includes(lower);
-        const userBioMatch = conv.otherUser?.bio?.toLowerCase().includes(lower);
         
-        return usernameMatch || productMatch || lastMessageMatch || userBioMatch;
+        return usernameMatch || productMatch || lastMessageMatch;
       });
     }
 
-    // Apply sorting
-    switch (advancedFilters.sortBy) {
+    switch (advFilters.sortBy) {
       case 'recent':
         filteredList.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
         break;
@@ -721,14 +643,11 @@ export default function ChatListScreen() {
     setFiltered(filteredList);
   }, []);
 
-  // 🎮 Selection Mode Features
+  // Selection Mode
   const toggleSelectionMode = useCallback(() => {
     LayoutAnimation.configureNext(ANIMATION_CONFIG);
     setIsSelectionMode(prev => !prev);
     setSelectedConversations(new Set());
-    if (Platform.OS === 'ios') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    }
   }, []);
 
   const toggleConversationSelection = useCallback((conversationId) => {
@@ -741,36 +660,23 @@ export default function ChatListScreen() {
       }
       return newSet;
     });
-    if (Platform.OS === 'ios') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }
   }, []);
 
   const selectAllConversations = useCallback(() => {
     setSelectedConversations(new Set(filtered.map(conv => conv._id)));
-    if (Platform.OS === 'ios') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    }
   }, [filtered]);
 
-  const clearSelection = useCallback(() => {
-    setSelectedConversations(new Set());
-    if (Platform.OS === 'ios') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }
-  }, []);
-
-  // 🗑️ Bulk Operations
+  // Bulk Operations
   const handleBulkDelete = useCallback(() => {
     if (selectedConversations.size === 0) return;
 
     Alert.alert(
       `Delete ${selectedConversations.size} Conversations`,
-      "This action cannot be undone. All messages in these conversations will be permanently deleted.",
+      "This action cannot be undone.",
       [
         { text: "Cancel", style: "cancel" },
         { 
-          text: `Delete ${selectedConversations.size} Conversations`, 
+          text: "Delete", 
           style: "destructive",
           onPress: () => performBulkDelete()
         }
@@ -783,10 +689,9 @@ export default function ChatListScreen() {
       const token = await user.getIdToken();
       const conversationIds = Array.from(selectedConversations);
       
-      // Optimistic update
       setConversations(prev => prev.filter(conv => !selectedConversations.has(conv._id)));
       
-      const resp = await fetch(`${API_URL}/api/messages/conversations/bulk-delete`, {
+      await fetch(`${API_URL}/api/messages/conversations/bulk-delete`, {
         method: "POST",
         headers: { 
           Authorization: `Bearer ${token}`,
@@ -795,15 +700,9 @@ export default function ChatListScreen() {
         body: JSON.stringify({ conversationIds })
       });
 
-      if (!resp.ok) {
-        throw new Error("Bulk delete failed");
-      }
-
-      if (Platform.OS === 'ios') {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      }
+      setSelectedConversations(new Set());
+      setIsSelectionMode(false);
     } catch (err) {
-      // Revert on error
       fetchConvs(true);
       Alert.alert("Error", "Failed to delete conversations");
     }
@@ -814,7 +713,6 @@ export default function ChatListScreen() {
       const token = await user.getIdToken();
       const conversationIds = Array.from(selectedConversations);
       
-      // Optimistic update
       setConversations(prev => prev.map(conv => 
         selectedConversations.has(conv._id) ? { ...conv, isArchived: true } : conv
       ));
@@ -828,9 +726,6 @@ export default function ChatListScreen() {
         body: JSON.stringify({ conversationIds, archive: true })
       });
 
-      if (Platform.OS === 'ios') {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      }
       setSelectedConversations(new Set());
       setIsSelectionMode(false);
     } catch (err) {
@@ -838,7 +733,7 @@ export default function ChatListScreen() {
     }
   }, [selectedConversations, user]);
 
-  // Enhanced time formatting
+  // Time formatting
   const formatTime = useCallback((dateString) => {
     if (!dateString) return "";
     
@@ -862,7 +757,7 @@ export default function ChatListScreen() {
     });
   }, []);
 
-  // Focus effect for data loading
+  // Focus effect
   useFocusEffect(
     useCallback(() => {
       fetchConvs();
@@ -875,7 +770,7 @@ export default function ChatListScreen() {
     }, [user])
   );
 
-  // Filter and search effect
+  // Filter effect
   useEffect(() => {
     debouncedSearch(searchQuery, conversations, activeFilter, advancedFilters);
   }, [conversations, activeFilter, searchQuery, advancedFilters, debouncedSearch]);
@@ -900,7 +795,7 @@ export default function ChatListScreen() {
     }
   }, [isLoadingMore, hasMore]);
 
-  // Enhanced swipe actions
+  // Swipe actions
   const renderRightActions = useCallback((progress, dragX, item) => {
     const translateX = dragX.interpolate({
       inputRange: [-160, 0],
@@ -915,7 +810,7 @@ export default function ChatListScreen() {
             style={[styles.swipeAction, styles.archiveAction]}
             onPress={() => {
               swipeableRefs.current.get(item._id)?.close();
-              handleBulkArchive([item._id]);
+              handleBulkArchive();
             }}
           >
             <MaterialCommunityIcons 
@@ -934,7 +829,8 @@ export default function ChatListScreen() {
             style={[styles.swipeAction, styles.deleteAction]}
             onPress={() => {
               swipeableRefs.current.get(item._id)?.close();
-              handleBulkDelete([item._id]);
+              setSelectedConversations(new Set([item._id]));
+              handleBulkDelete();
             }}
           >
             <MaterialCommunityIcons name="delete" size={24} color="#FFFFFF" />
@@ -945,47 +841,27 @@ export default function ChatListScreen() {
     );
   }, [handleBulkArchive, handleBulkDelete]);
 
-  // Typing Indicator Component
-  const TypingIndicator = useCallback(({ conversationId }) => {
+  // Typing Indicator
+  const TypingIndicator = ({ conversationId }) => {
     const typingData = typingUsers[conversationId];
     if (!typingData) return null;
 
     return (
-      <View style={styles.typingContainer}>
-        <LottieView
-          source={require('../../../assets/animations/typing.json')}
-          autoPlay
-          loop
-          style={styles.typingAnimation}
-        />
-        <Text style={styles.typingText}>
-          {typingData.username} is typing...
-        </Text>
-      </View>
+      <Text style={styles.typingText}>
+        {typingData.username} is typing...
+      </Text>
     );
-  }, [typingUsers]);
+  };
 
-  // Online Indicator Component
-  const OnlineIndicator = useCallback(({ userId }) => (
+  // Online Indicator
+  const OnlineIndicator = () => (
     <View style={styles.onlineIndicator}>
       <View style={styles.onlinePulse} />
     </View>
-  ), []);
+  );
 
-  // Conversation Skeleton Loader
-  const ConversationSkeleton = useCallback(() => (
-    <View style={styles.skeletonCard}>
-      <View style={styles.skeletonAvatar} />
-      <View style={styles.skeletonContent}>
-        <View style={styles.skeletonLine} />
-        <View style={[styles.skeletonLine, styles.skeletonShort]} />
-        <View style={[styles.skeletonLine, styles.skeletonShorter]} />
-      </View>
-    </View>
-  ), []);
-
-  // 🎯 Enhanced renderItem with super features
-  const renderItem = useCallback(({ item, index }) => {
+  // Render Item
+  const renderItem = useCallback(({ item }) => {
     const isSelected = selectedConversations.has(item._id);
     const isUnread = item.unreadCount > 0;
     const isArchived = item.isArchived;
@@ -1038,14 +914,11 @@ export default function ChatListScreen() {
                   style={styles.avatar}
                 />
               ) : (
-                <LinearGradient
-                  colors={['#2F6F61', '#3A7B6C']}
-                  style={styles.placeholderAvatar}
-                >
+                <View style={styles.placeholderAvatar}>
                   <Text style={styles.placeholderInitial}>
                     {item.otherUser?.username?.charAt(0)?.toUpperCase() || "U"}
                   </Text>
-                </LinearGradient>
+                </View>
               )}
             </View>
             
@@ -1065,11 +938,6 @@ export default function ChatListScreen() {
             rightThreshold={40}
             friction={2}
             overshootFriction={8}
-            onSwipeableOpen={(direction) => {
-              if (direction === 'right' && Platform.OS === 'ios') {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              }
-            }}
           >
             <Pressable
               style={[
@@ -1095,16 +963,13 @@ export default function ChatListScreen() {
                     style={styles.avatar}
                   />
                 ) : (
-                  <LinearGradient
-                    colors={['#2F6F61', '#3A7B6C']}
-                    style={styles.placeholderAvatar}
-                  >
+                  <View style={styles.placeholderAvatar}>
                     <Text style={styles.placeholderInitial}>
                       {item.otherUser?.username?.charAt(0)?.toUpperCase() || "U"}
                     </Text>
-                  </LinearGradient>
+                  </View>
                 )}
-                {isOnline && <OnlineIndicator userId={item.otherUser?._id} />}
+                {isOnline && <OnlineIndicator />}
                 {isUnread && <View style={styles.unreadBadge} />}
                 {isArchived && (
                   <View style={styles.archivedBadge}>
@@ -1191,14 +1056,13 @@ export default function ChatListScreen() {
   ]);
 
   const currentStatus = connectionConfig[connectionStatus];
-  const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
 
   return (
     <Layout>
       <StatusBar barStyle="dark-content" backgroundColor="#F5F7F6" />
       
-      {/* Animated Header */}
-      <Animated.View style={[styles.header, { opacity: headerOpacity }]}>
+      {/* Header */}
+      <View style={styles.header}>
         <View style={styles.headerTop}>
           {isSelectionMode ? (
             <View style={styles.selectionHeader}>
@@ -1244,11 +1108,8 @@ export default function ChatListScreen() {
           )}
         </View>
 
-        {/* Enhanced Connection Status */}
-        <LinearGradient
-          colors={currentStatus.gradient}
-          style={styles.statusContainer}
-        >
+        {/* Connection Status */}
+        <View style={[styles.statusContainer, { backgroundColor: currentStatus.color }]}>
           <MaterialCommunityIcons 
             name={currentStatus.icon} 
             size={16} 
@@ -1262,17 +1123,17 @@ export default function ChatListScreen() {
               <Text style={styles.retryText}>RETRY</Text>
             </TouchableOpacity>
           )}
-        </LinearGradient>
-      </Animated.View>
+        </View>
+      </View>
 
-      {/* Enhanced Search Section */}
-      <Animated.View style={[styles.searchSection, searchFocused && styles.searchSectionFocused]}>
+      {/* Search Section */}
+      <View style={[styles.searchSection, searchFocused && styles.searchSectionFocused]}>
         <View style={styles.searchBox}>
           <MaterialCommunityIcons name="magnify" size={20} color="#8E8E93" />
           <TextInput
             ref={searchInputRef}
             style={styles.searchInput}
-            placeholder="Search conversations, products, messages..."
+            placeholder="Search conversations..."
             placeholderTextColor="#8E8E93"
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -1322,18 +1183,17 @@ export default function ChatListScreen() {
             onPress={handleFilterChange}
           />
         </ScrollView>
-      </Animated.View>
+      </View>
 
-      {/* Enhanced Conversation List */}
+      {/* Conversation List */}
       <View style={styles.listContainer}>
         {isLoading && filtered.length === 0 ? (
           <View style={styles.loadingContainer}>
-            {Array.from({ length: 8 }).map((_, index) => (
-              <ConversationSkeleton key={index} />
-            ))}
+            <ActivityIndicator size="large" color="#2F6F61" />
+            <Text style={styles.loadingText}>Loading conversations...</Text>
           </View>
         ) : (
-          <Animated.FlatList
+          <FlatList
             ref={listRef}
             data={filtered}
             keyExtractor={(item) => item._id}
@@ -1344,24 +1204,18 @@ export default function ChatListScreen() {
                 onRefresh={onRefresh}
                 colors={["#2F6F61"]}
                 tintColor="#2F6F61"
-                progressViewOffset={Platform.OS === 'android' ? 40 : 0}
               />
             }
             ListEmptyComponent={
               <View style={styles.emptyState}>
-                <LottieView
-                  source={require('../../../assets/animations/empty-chat.json')}
-                  autoPlay
-                  loop
-                  style={styles.emptyAnimation}
-                />
+                <MaterialCommunityIcons name="message-outline" size={80} color="#E0E6E3" />
                 <Text style={styles.emptyTitle}>
                   {searchQuery || activeFilter !== "all" ? "No matches found" : "No conversations yet"}
                 </Text>
                 <Text style={styles.emptySubtitle}>
                   {searchQuery || activeFilter !== "all" 
                     ? "Try adjusting your search or filter" 
-                    : "Start chatting by messaging sellers from product pages"}
+                    : "Start chatting by messaging sellers"}
                 </Text>
                 {(searchQuery || activeFilter !== "all") && (
                   <TouchableOpacity 
@@ -1369,10 +1223,9 @@ export default function ChatListScreen() {
                     onPress={() => {
                       setSearchQuery("");
                       setActiveFilter("all");
-                      searchInputRef.current?.focus();
                     }}
                   >
-                    <Text style={styles.resetButtonText}>Show all conversations</Text>
+                    <Text style={styles.resetButtonText}>Show all</Text>
                   </TouchableOpacity>
                 )}
               </View>
@@ -1381,24 +1234,13 @@ export default function ChatListScreen() {
               isLoadingMore ? (
                 <View style={styles.footer}>
                   <ActivityIndicator size="large" color="#2F6F61" />
-                  <Text style={styles.footerText}>Loading more conversations...</Text>
                 </View>
               ) : null
             }
             onEndReached={handleLoadMore}
             onEndReachedThreshold={0.3}
-            scrollEventThrottle={16}
-            onScroll={Animated.event(
-              [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-              { useNativeDriver: true }
-            )}
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
-            removeClippedSubviews={Platform.OS === 'android'}
-            maxToRenderPerBatch={12}
-            updateCellsBatchingPeriod={50}
-            windowSize={21}
-            initialNumToRender={12}
           />
         )}
       </View>
@@ -1423,24 +1265,20 @@ export default function ChatListScreen() {
 
       {/* Selection Mode FAB */}
       {isSelectionMode && selectedConversations.size > 0 && (
-        <AnimatedTouchable
+        <TouchableOpacity
           style={[styles.fab, styles.deleteFab]}
           onPress={handleBulkDelete}
           activeOpacity={0.8}
         >
           <MaterialCommunityIcons name="delete" size={24} color="#FFFFFF" />
           <Text style={styles.fabText}>{selectedConversations.size}</Text>
-        </AnimatedTouchable>
+        </TouchableOpacity>
       )}
     </Layout>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#F5F7F6",
-  },
   header: {
     backgroundColor: '#F5F7F6',
     paddingTop: Platform.OS === 'ios' ? 60 : 40,
@@ -1453,7 +1291,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 4,
-    zIndex: 1000,
   },
   headerTop: {
     flexDirection: 'row',
@@ -1572,7 +1409,6 @@ const styles = StyleSheet.create({
   },
   filterContainer: {
     flexDirection: "row",
-    gap: 8,
   },
   filterBtn: {
     flexDirection: "row",
@@ -1604,7 +1440,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#F5F7F6',
   },
   loadingContainer: {
-    padding: 20,
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: '#8E8E93',
   },
   listContent: {
     paddingHorizontal: 15,
@@ -1670,6 +1514,7 @@ const styles = StyleSheet.create({
     borderRadius: 30,
     justifyContent: "center",
     alignItems: "center",
+    backgroundColor: '#2F6F61',
   },
   placeholderInitial: {
     color: "#FFFFFF",
@@ -1773,6 +1618,11 @@ const styles = StyleSheet.create({
     color: '#2F6F61',
     fontWeight: '500',
   },
+  typingText: {
+    fontSize: 14,
+    color: '#2F6F61',
+    fontStyle: 'italic',
+  },
   unreadCountBadge: {
     position: 'absolute',
     top: -5,
@@ -1801,61 +1651,12 @@ const styles = StyleSheet.create({
   chevron: {
     marginLeft: 8,
   },
-  typingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  typingAnimation: {
-    width: 20,
-    height: 20,
-    marginRight: 6,
-  },
-  typingText: {
-    fontSize: 14,
-    color: '#2F6F61',
-    fontStyle: 'italic',
-  },
-  skeletonCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#FFFFFF",
-    borderRadius: 20,
-    padding: 16,
-    marginVertical: 4,
-    minHeight: 90,
-  },
-  skeletonAvatar: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: "#E0E6E3",
-    marginRight: 16,
-  },
-  skeletonContent: {
-    flex: 1,
-  },
-  skeletonLine: {
-    height: 16,
-    backgroundColor: '#E0E6E3',
-    borderRadius: 8,
-    marginBottom: 8,
-  },
-  skeletonShort: {
-    width: '70%',
-  },
-  skeletonShorter: {
-    width: '50%',
-  },
   emptyState: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 40,
     paddingVertical: 60,
-  },
-  emptyAnimation: {
-    width: 200,
-    height: 200,
   },
   emptyTitle: {
     fontSize: 22,
@@ -1884,15 +1685,8 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   footer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
     padding: 16,
-  },
-  footerText: {
-    marginLeft: 8,
-    fontSize: 14,
-    color: '#8E8E93',
+    alignItems: 'center',
   },
   swipeActions: {
     flexDirection: "row",
