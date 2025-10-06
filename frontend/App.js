@@ -4,6 +4,7 @@ import { NavigationContainer } from "@react-navigation/native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { AuthProvider, useAuth } from "./src/context/AuthContext";
 import AppNavigator from "./src/navigation/AppNavigator";
+import 'react-native-gesture-handler';
 import AdminNavigator from "./src/navigation/AdminNavigator";
 import { ActivityIndicator, View, StyleSheet, Text } from "react-native";
 

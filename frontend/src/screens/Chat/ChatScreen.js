@@ -1,3 +1,4 @@
+// frontend/src/screens/Chat/ChatScreen.js - FIXED VERSION
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -24,11 +25,14 @@ import { API_URL } from '../../constants/config';
 import io from 'socket.io-client';
 
 export default function ChatScreen() {
-  const { user } = useAuth();
+  const { user, userDetails } = useAuth();
   const route = useRoute();
   const navigation = useNavigation();
   const flatListRef = useRef(null);
   const socketRef = useRef(null);
+  const isInitialLoad = useRef(true);
+  const isUserScrolling = useRef(false);
+  const messageIdsRef = useRef(new Set());
 
   const { conversation, otherUser } = route.params;
 
@@ -43,148 +47,222 @@ export default function ChatScreen() {
   const [inquiryClosed, setInquiryClosed] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [currentUserId, setCurrentUserId] = useState(null);
-  const [lastMessageId, setLastMessageId] = useState(null); // Track last message for polling
+  const [showScrollButton, setShowScrollButton] = useState(false);
+  const [newMessagesCount, setNewMessagesCount] = useState(0);
+  const [isConnected, setIsConnected] = useState(false);
 
-  // Group messages by date
-  const groupMessagesByDate = (messagesArray) => {
-    const grouped = {};
-    messagesArray.forEach(message => {
-      const date = new Date(message.sentDate).toDateString();
-      if (!grouped[date]) {
-        grouped[date] = [];
-      }
-      grouped[date].push(message);
-    });
-    return grouped;
-  };
-
-  const [groupedMessages, setGroupedMessages] = useState({});
-
+  // Initialize Socket.IO
   useEffect(() => {
-    socketRef.current = io(API_URL, {
-      transports: ['websocket'],
-      auth: { token: user.getIdToken() }
-    });
-
-    socketRef.current.on('connect', () => {
-      console.log('Socket connected');
-      socketRef.current.emit('userConnect', user.uid);
-      socketRef.current.emit('joinConversation', conversation._id);
-    });
-
-    socketRef.current.on('newMessage', (message) => {
-      setMessages(prev => {
-        const exists = prev.some(m => m._id === message._id);
-        if (!exists) {
-          return [...prev, { ...message, status: 'delivered' }];
+    const initSocket = async () => {
+      try {
+        if (userDetails?._id) {
+          setCurrentUserId(userDetails._id);
         }
-        return prev;
-      });
-      setLastMessageId(message._id);
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
-    });
 
-    socketRef.current.on('userTyping', ({ userId, isTyping }) => {
-      if (userId === otherUser._id) setIsTyping(isTyping);
-    });
+        const token = await user.getIdToken();
+        
+        socketRef.current = io(API_URL, {
+          transports: ['websocket', 'polling'],
+          auth: { token },
+          reconnection: true,
+          reconnectionAttempts: 5,
+          reconnectionDelay: 1000
+        });
 
-    socketRef.current.on('userOnline', ({ userId, isOnline }) => {
-      if (userId === otherUser._id) setIsOnline(isOnline);
-    });
+        socketRef.current.on('connect', () => {
+          console.log('✅ Chat socket connected');
+          setIsConnected(true);
+          socketRef.current.emit('joinConversation', conversation._id);
+        });
 
-    socketRef.current.on('messageDeleted', ({ messageId }) => {
-      setMessages(prev => prev.filter(msg => msg._id !== messageId));
-    });
+        socketRef.current.on('disconnect', (reason) => {
+          console.log('❌ Chat socket disconnected:', reason);
+          setIsConnected(false);
+        });
 
-    fetchCurrentUserId();
-    fetchMessages();
-    markMessagesAsRead();
-    setupNavigation();
+        socketRef.current.on('conversationJoined', ({ conversationId }) => {
+          console.log('✅ Joined conversation:', conversationId);
+        });
 
-    // Start polling
-    const pollingInterval = setInterval(pollMessages, 5000); // Poll every 5 seconds
+        // Handle new messages without duplicates
+        socketRef.current.on('newMessage', (message) => {
+          console.log('📨 New message received:', message._id);
+          
+          if (messageIdsRef.current.has(message._id)) {
+            console.log('⚠️ Duplicate message ignored:', message._id);
+            return;
+          }
+
+          messageIdsRef.current.add(message._id);
+          
+          setMessages(prev => {
+            const exists = prev.some(m => m._id === message._id);
+            if (exists) {
+              console.log('⚠️ Message already in state:', message._id);
+              return prev;
+            }
+            
+            console.log('✅ Adding new message to state');
+            
+            if (isUserScrolling.current) {
+              setNewMessagesCount(count => count + 1);
+            }
+            
+            return [...prev, message];
+          });
+          
+          if (!isUserScrolling.current || isInitialLoad.current) {
+            setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+          }
+        });
+
+        socketRef.current.on('userTyping', ({ userId, isTyping: typing }) => {
+          if (userId === otherUser._id) {
+            setIsTyping(typing);
+          }
+        });
+
+        socketRef.current.on('userOnlineStatus', ({ userId, isOnline: online }) => {
+          if (userId === otherUser._id) {
+            setIsOnline(online);
+          }
+        });
+
+        socketRef.current.on('messageDelivered', ({ messageId }) => {
+          setMessages(prev => prev.map(msg => 
+            msg._id === messageId ? { ...msg, isDelivered: true, status: 'delivered' } : msg
+          ));
+        });
+
+        socketRef.current.on('messagesRead', ({ messageIds }) => {
+          setMessages(prev => prev.map(msg => 
+            messageIds.includes(msg._id) ? { ...msg, isRead: true, status: 'read' } : msg
+          ));
+        });
+
+        socketRef.current.on('messageDeleted', ({ messageId }) => {
+          messageIdsRef.current.delete(messageId);
+          setMessages(prev => prev.filter(msg => msg._id !== messageId));
+        });
+
+        socketRef.current.on('incomingCall', ({ callerId, callerName, callType, conversationId }) => {
+          Alert.alert(
+            'Incoming Call',
+            `${callerName} is calling you`,
+            [
+              { 
+                text: 'Decline', 
+                onPress: () => socketRef.current.emit('callResponse', { 
+                  conversationId, 
+                  callerId, 
+                  accepted: false 
+                }),
+                style: 'cancel' 
+              },
+              { 
+                text: 'Accept', 
+                onPress: () => socketRef.current.emit('callResponse', { 
+                  conversationId, 
+                  callerId, 
+                  accepted: true 
+                })
+              }
+            ]
+          );
+        });
+
+        socketRef.current.on('callResponse', ({ accepted }) => {
+          Alert.alert(
+            'Call Response',
+            accepted ? 'Call accepted!' : 'Call declined',
+            [{ text: 'OK' }]
+          );
+        });
+
+        socketRef.current.on('callEnded', () => {
+          Alert.alert('Call Ended', 'The call has ended', [{ text: 'OK' }]);
+        });
+
+      } catch (error) {
+        console.error('Socket initialization error:', error);
+      }
+    };
+
+    if (user && userDetails) {
+      initSocket();
+      fetchMessages();
+      markMessagesAsRead();
+      setupNavigation();
+    }
 
     return () => {
-      socketRef.current.emit('leaveConversation', conversation._id);
-      socketRef.current.disconnect();
-      clearInterval(pollingInterval); // Cleanup polling
+      if (socketRef.current) {
+        socketRef.current.emit('leaveConversation', conversation._id);
+        socketRef.current.disconnect();
+      }
     };
-  }, []);
+  }, [user, userDetails]);
 
-  const fetchCurrentUserId = async () => {
-    try {
-      const token = await user.getIdToken();
-      const response = await fetch(`${API_URL}/api/users/me`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await response.json();
-      if (response.ok) {
-        setCurrentUserId(data.user._id);
-      }
-    } catch (err) {
-      console.error('Error fetching current user ID:', err);
-    }
-  };
-
-  // Polling function to fetch new messages
-  const pollMessages = async () => {
-    try {
-      const token = await user.getIdToken();
-      const response = await fetch(
-        `${API_URL}/api/messages/conversations/${conversation._id}/messages${lastMessageId ? `?sinceMessageId=${lastMessageId}` : ''}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
-
-      const data = await response.json();
-      if (response.ok && data.messages?.length > 0) {
-        setMessages(prev => {
-          const newMessages = data.messages.filter(
-            msg => !prev.some(existing => existing._id === msg._id)
-          );
-          const updatedMessages = [...prev, ...newMessages];
-          if (newMessages.length > 0) {
-            setLastMessageId(newMessages[newMessages.length - 1]._id);
-          }
-          return updatedMessages;
-        });
-      }
-    } catch (err) {
-      console.error('Error polling messages:', err);
-    }
-  };
-
+  // Typing indicator
   useEffect(() => {
-    if (messages.length > 0) {
-      setGroupedMessages(groupMessagesByDate(messages));
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
-    }
-  }, [messages]);
-
-  useEffect(() => {
-    if (newMessage.trim()) {
+    if (newMessage.trim() && socketRef.current) {
       socketRef.current.emit('typing', {
         conversationId: conversation._id,
-        userId: user.uid,
         isTyping: true
       });
+      
       const timer = setTimeout(() => {
-        socketRef.current.emit('typing', {
+        socketRef.current?.emit('typing', {
           conversationId: conversation._id,
-          userId: user.uid,
           isTyping: false
         });
       }, 2000);
+      
       return () => clearTimeout(timer);
-    } else {
+    } else if (socketRef.current) {
       socketRef.current.emit('typing', {
         conversationId: conversation._id,
-        userId: user.uid,
         isTyping: false
       });
     }
   }, [newMessage]);
+
+  // Handle scroll events
+  const handleScroll = (event) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const distanceFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
+    
+    const isAtBottom = distanceFromBottom < 50;
+    
+    if (isAtBottom) {
+      isUserScrolling.current = false;
+      setShowScrollButton(false);
+      setNewMessagesCount(0);
+      
+      if (messages.length > 0) {
+        const unreadMessages = messages
+          .filter(msg => !msg.isRead && msg.receiverId._id === currentUserId)
+          .map(msg => msg._id);
+        
+        if (unreadMessages.length > 0 && socketRef.current) {
+          socketRef.current.emit('messageRead', {
+            conversationId: conversation._id,
+            messageIds: unreadMessages
+          });
+        }
+      }
+    } else {
+      isUserScrolling.current = true;
+      setShowScrollButton(true);
+    }
+  };
+
+  const scrollToBottom = () => {
+    flatListRef.current?.scrollToEnd({ animated: true });
+    setNewMessagesCount(0);
+    setShowScrollButton(false);
+    isUserScrolling.current = false;
+  };
 
   const setupNavigation = () => {
     navigation.setOptions({
@@ -236,9 +314,16 @@ export default function ChatScreen() {
 
       const data = await response.json();
       if (response.ok) {
+        messageIdsRef.current.clear();
+        data.messages.forEach(msg => messageIdsRef.current.add(msg._id));
+        
         setMessages(data.messages || []);
-        if (data.messages?.length > 0) {
-          setLastMessageId(data.messages[data.messages.length - 1]._id);
+        
+        if (isInitialLoad.current && data.messages?.length > 0) {
+          setTimeout(() => {
+            flatListRef.current?.scrollToEnd({ animated: false });
+            isInitialLoad.current = false;
+          }, 300);
         }
       } else {
         console.error('Error fetching messages:', data.error);
@@ -292,16 +377,23 @@ export default function ChatScreen() {
 
       const data = await response.json();
       if (response.ok) {
+        messageIdsRef.current.add(data.message._id);
+        
         setMessages(prev => [...prev, data.message]);
-        setLastMessageId(data.message._id);
         setNewMessage('');
         setReplyTo(null);
-        socketRef.current.emit('sendMessage', {
-          conversationId: conversation._id,
-          message: data.message
-        });
+        
+        if (socketRef.current) {
+          socketRef.current.emit('sendMessage', {
+            conversationId: conversation._id,
+            message: data.message
+          });
+        }
+        
         setTimeout(() => {
           flatListRef.current?.scrollToEnd({ animated: true });
+          isUserScrolling.current = false;
+          setShowScrollButton(false);
         }, 100);
       } else {
         Alert.alert('Error', data.error || 'Failed to send message');
@@ -362,9 +454,7 @@ export default function ChatScreen() {
               'Content-Type': 'application/json',
               Authorization: `Bearer ${token}`,
             },
-            body: JSON.stringify({
-              image: base64
-            }),
+            body: JSON.stringify({ image: base64 }),
           });
 
           const uploadData = await uploadResponse.json();
@@ -401,6 +491,13 @@ export default function ChatScreen() {
         {
           text: 'Call',
           onPress: () => {
+            if (socketRef.current) {
+              socketRef.current.emit('callUser', {
+                conversationId: conversation._id,
+                callType: 'voice',
+                receiverId: otherUser._id
+              });
+            }
             sendMessage({
               messageType: 'call',
               content: '📞 Voice call started',
@@ -430,7 +527,7 @@ export default function ChatScreen() {
   const closeInquiry = () => {
     Alert.alert(
       'Close Inquiry',
-      'Are you sure you want to close this product inquiry? This will end the conversation about this product.',
+      'Are you sure you want to close this product inquiry?',
       [
         { text: 'Cancel', style: 'cancel' },
         { 
@@ -469,8 +566,8 @@ export default function ChatScreen() {
               );
               
               if (response.ok) {
+                messageIdsRef.current.clear();
                 setMessages([]);
-                setLastMessageId(null);
                 Alert.alert('Success', 'Chat cleared successfully');
               }
             } catch (err) {
@@ -503,7 +600,16 @@ export default function ChatScreen() {
               );
               
               if (response.ok) {
+                messageIdsRef.current.delete(messageId);
                 setMessages(prev => prev.filter(msg => msg._id !== messageId));
+                
+                if (socketRef.current) {
+                  socketRef.current.emit('deleteMessage', {
+                    messageId,
+                    conversationId: conversation._id
+                  });
+                }
+                
                 Alert.alert('Success', 'Message deleted successfully');
               } else {
                 Alert.alert('Error', 'Failed to delete message');
@@ -579,6 +685,19 @@ export default function ChatScreen() {
     return '✓ Sent';
   };
 
+  const groupMessagesByDate = (messagesArray) => {
+    const grouped = {};
+    
+    messagesArray.forEach(message => {
+      const date = new Date(message.sentDate).toDateString();
+      if (!grouped[date]) {
+        grouped[date] = [];
+      }
+      grouped[date].push(message);
+    });
+    return grouped;
+  };
+
   const renderDateHeader = (date) => (
     <View style={styles.dateHeader}>
       <Text style={styles.dateHeaderText}>{formatDateHeader(date)}</Text>
@@ -592,7 +711,9 @@ export default function ChatScreen() {
       <View style={styles.replyContainer}>
         <View style={styles.replyIndicator}>
           <MaterialCommunityIcons name="reply" size={16} color="#2F6F61" />
-          <Text style={styles.replyLabel}>Replying to {replyTo.senderId._id === user.uid ? 'yourself' : otherUser.username}</Text>
+          <Text style={styles.replyLabel}>
+            Replying to {replyTo.senderId._id === currentUserId ? 'yourself' : otherUser.username}
+          </Text>
         </View>
         <View style={styles.replyContent}>
           <Text style={styles.replyText} numberOfLines={2}>
@@ -606,7 +727,7 @@ export default function ChatScreen() {
     );
   };
 
-  const SwipeToReply = ({ children, onReply, isMyMessage }) => {
+  const SwipeToReply = ({ children, onReply }) => {
     const translateX = useRef(new Animated.Value(0)).current;
     
     const onGestureEvent = Animated.event(
@@ -632,49 +753,16 @@ export default function ChatScreen() {
       }
     };
 
-    const replyIconOpacity = translateX.interpolate({
-      inputRange: isMyMessage ? [-150, -80, 0] : [0, 80, 150],
-      outputRange: [1, 1, 0],
-      extrapolate: 'clamp',
-    });
-
-    const replyIconTranslateX = translateX.interpolate({
-      inputRange: isMyMessage ? [-150, 0] : [0, 150],
-      outputRange: isMyMessage ? [40, 100] : [-100, -40],
-      extrapolate: 'clamp',
-    });
-
     return (
-      <View style={{ flex: 1 }}>
-        <PanGestureHandler
-          onGestureEvent={onGestureEvent}
-          onHandlerStateChange={onHandlerStateChange}
-        >
-          <Animated.View style={{ 
-            flex: 1, 
-            transform: [{ translateX }] 
-          }}>
-            {children}
-          </Animated.View>
-        </PanGestureHandler>
-        
-        <Animated.View
-          style={{
-            position: 'absolute',
-            [isMyMessage ? 'left' : 'right']: 15,
-            top: '50%',
-            transform: [
-              { translateY: -15 },
-              { translateX: replyIconTranslateX }
-            ],
-            opacity: replyIconOpacity,
-          }}
-        >
-          <View style={styles.replyIcon}>
-            <MaterialCommunityIcons name="reply" size={16} color="#FFFFFF" />
-          </View>
+      <PanGestureHandler
+        onGestureEvent={onGestureEvent}
+        onHandlerStateChange={onHandlerStateChange}
+        activeOffsetX={[-10, 10]}
+      >
+        <Animated.View style={{ transform: [{ translateX }] }}>
+          {children}
         </Animated.View>
-      </View>
+      </PanGestureHandler>
     );
   };
 
@@ -682,7 +770,7 @@ export default function ChatScreen() {
     const isMyMessage = item.senderId._id === currentUserId;
 
     return (
-      <SwipeToReply onReply={() => setReplyTo(item)} isMyMessage={isMyMessage}>
+      <SwipeToReply onReply={() => setReplyTo(item)}>
         <View style={[
           styles.messageContainer, 
           isMyMessage ? styles.myMessage : styles.otherMessage
@@ -695,7 +783,7 @@ export default function ChatScreen() {
                   isMyMessage ? styles.myReplyPreview : styles.otherReplyPreview
                 ]}
                 onPress={() => {
-                  const repliedIndex = messages.findIndex(m => m._id === item.replyTo._id);
+                  const repliedIndex = messages.findIndex(m => m._id === item.replyTo.messageId);
                   if (repliedIndex !== -1) {
                     flatListRef.current?.scrollToIndex({ index: repliedIndex, animated: true });
                   }
@@ -831,8 +919,14 @@ export default function ChatScreen() {
     );
   };
 
+  const groupedMessages = groupMessagesByDate(messages);
+  const flattenedData = Object.entries(groupedMessages).map(([date, msgs]) => ({
+    date,
+    messages: msgs
+  }));
+
   const renderItem = ({ item: dateGroup }) => (
-    <View>
+    <View key={dateGroup.date}>
       {renderDateHeader(dateGroup.date)}
       {dateGroup.messages.map((message) => (
         <View key={message._id}>
@@ -842,11 +936,6 @@ export default function ChatScreen() {
     </View>
   );
 
-  const flattenedData = Object.entries(groupedMessages).map(([date, messages]) => ({
-    date,
-    messages
-  }));
-
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -854,6 +943,13 @@ export default function ChatScreen() {
       keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
       <StatusBar barStyle="light-content" backgroundColor="#2F6F61" />
+      
+      {!isConnected && (
+        <View style={styles.connectionBanner}>
+          <MaterialCommunityIcons name="wifi-off" size={16} color="#FFF" />
+          <Text style={styles.connectionText}>Connecting...</Text>
+        </View>
+      )}
       
       {conversation.product && !inquiryClosed && (
         <View style={styles.productHeader}>
@@ -892,14 +988,15 @@ export default function ChatScreen() {
         renderItem={renderItem}
         style={styles.messagesList}
         contentContainerStyle={styles.messagesContent}
-        onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
           !loading && (
             <View style={styles.emptyState}>
               <MaterialCommunityIcons name="message-outline" size={60} color="#E0E6E3" />
               <Text style={styles.emptyTitle}>No messages yet</Text>
-              <Text style={styles.emptySubtitle}>Start the conversation by sending a message!</Text>
+              <Text style={styles.emptySubtitle}>Start the conversation!</Text>
             </View>
           )
         }
@@ -909,6 +1006,22 @@ export default function ChatScreen() {
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#2F6F61" />
         </View>
+      )}
+
+      {showScrollButton && (
+        <TouchableOpacity 
+          style={styles.scrollToBottomButton}
+          onPress={scrollToBottom}
+        >
+          <MaterialCommunityIcons name="chevron-down" size={24} color="#FFFFFF" />
+          {newMessagesCount > 0 && (
+            <View style={styles.newMessagesBadge}>
+              <Text style={styles.newMessagesText}>
+                {newMessagesCount > 99 ? '99+' : newMessagesCount}
+              </Text>
+            </View>
+          )}
+        </TouchableOpacity>
       )}
 
       {renderReplySection()}
@@ -941,11 +1054,7 @@ export default function ChatScreen() {
           {sending ? (
             <ActivityIndicator size="small" color="#fff" />
           ) : (
-            <MaterialCommunityIcons
-              name="send"
-              size={20}
-              color="#fff"
-            />
+            <MaterialCommunityIcons name="send" size={20} color="#fff" />
           )}
         </TouchableOpacity>
       </View>
@@ -980,6 +1089,19 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#F5F7F6",
+  },
+  connectionBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFA726',
+    paddingVertical: 6,
+    gap: 8,
+  },
+  connectionText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '600',
   },
   headerButton: {
     flexDirection: 'row',
@@ -1362,6 +1484,42 @@ const styles = StyleSheet.create({
     borderRadius: 25,
     padding: 15,
   },
+  scrollToBottomButton: {
+    position: 'absolute',
+    bottom: 90,
+    right: 20,
+    backgroundColor: '#2F6F61',
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+    zIndex: 1000,
+  },
+  newMessagesBadge: {
+    position: 'absolute',
+    top: -5,
+    right: -5,
+    backgroundColor: '#FF3B30',
+    borderRadius: 12,
+    minWidth: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  newMessagesText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
   modalContainer: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.95)",
@@ -1385,18 +1543,5 @@ const styles = StyleSheet.create({
     padding: 8,
     backgroundColor: "rgba(0,0,0,0.5)",
     borderRadius: 20,
-  },
-  replyIcon: {
-    backgroundColor: '#2F6F61',
-    borderRadius: 15,
-    width: 30,
-    height: 30,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
   },
 });
