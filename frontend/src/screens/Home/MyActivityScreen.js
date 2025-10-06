@@ -14,6 +14,8 @@ import { useNavigation } from "@react-navigation/native";
 import { useAuth } from "../../context/AuthContext";
 import { API_URL } from "../../constants/config";
 import Layout from "../../components/Layouts";
+import ProductOwnerBuyerRequest from "./ProductOwnerBuyerRequest";
+
 
 // Theme colors
 const theme = {
@@ -33,6 +35,8 @@ export default function MyActivityScreen() {
   const [myProducts, setMyProducts] = useState([]);
   const [swapRequests, setSwapRequests] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [buyRequests, setBuyRequests] = useState([]);
+
 
   const sectionPositions = useRef({});
   const scrollRef = useRef(null);
@@ -41,6 +45,8 @@ export default function MyActivityScreen() {
   const soldCount = myProducts.filter((p) => p.status === "sold").length;
   const swappedCount = myProducts.filter((p) => p.status === "swapped").length;
   const pendingRequestsCount = swapRequests.filter((r) => r.status === "pending").length;
+  const buyRequestsCount = buyRequests.length;
+
 
   const scrollToSection = (key) => {
     if (scrollRef.current && sectionPositions.current[key] !== undefined) {
@@ -103,10 +109,14 @@ export default function MyActivityScreen() {
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    Promise.all([fetchMyProducts(), fetchSwapRequests()]).finally(() =>
-      setRefreshing(false)
-    );
+    Promise.all([fetchMyProducts(), fetchSwapRequests(), fetchBuyRequests()])
+      .finally(() => setRefreshing(false));
   }, []);
+
+  useEffect(() => {
+    onRefresh();
+  }, []);
+
 
   useEffect(() => {
     onRefresh();
@@ -178,6 +188,57 @@ export default function MyActivityScreen() {
     </TouchableOpacity>
   );
 
+  const fetchBuyRequests = async () => {
+    try {
+      const res = await axios.get(`${API_URL}/api/products/buy-requests`);
+      const allProducts = res.data || [];
+
+      const requests = [];
+
+      allProducts.forEach((product) => {
+        if (!product.buyRequests?.length) return;
+
+        product.buyRequests.forEach((req) => {
+          // Use backend-provided fields directly
+          requests.push({
+            _id: req._id,
+            status: req.status,
+            buyerId: req.buyerId,
+            buyerName: req.buyerName,
+            buyerContact: req.buyerContact,
+            sellerId: req.sellerId,
+            sellerName: req.sellerName,
+            sellerContact: req.sellerContact,
+            product,
+          });
+        });
+      });
+
+      // Sort pending first
+      const statusOrder = { pending: 1, accepted: 2, rejected: 3, cancelled: 4 };
+      requests.sort((a, b) => (statusOrder[a.status] || 99) - (statusOrder[b.status] || 99));
+
+      // Filter requests relevant to the current user
+      const currentUserDbId = user.dbId || user.uid;
+      const filtered = requests.filter(
+        r => r.sellerId === String(user.uid).trim() || r.buyerId === String(currentUserDbId).trim()
+      );
+
+      setBuyRequests(filtered);
+
+    } catch (err) {
+      console.log("Error fetching buy requests:", err.response?.data || err.message);
+      setBuyRequests([]);
+    }
+  };
+
+
+
+
+
+
+
+
   return (
     <Layout>
       {/* Add Product */}
@@ -194,19 +255,29 @@ export default function MyActivityScreen() {
           <Text style={styles.statNumber}>{availableCount}</Text>
           <Text style={styles.statLabel}>Available</Text>
         </TouchableOpacity>
+
         <TouchableOpacity style={styles.statBox} onPress={() => scrollToSection("sold")}>
           <Text style={styles.statNumber}>{soldCount}</Text>
           <Text style={styles.statLabel}>Sold</Text>
         </TouchableOpacity>
+
         <TouchableOpacity style={styles.statBox} onPress={() => scrollToSection("swapped")}>
           <Text style={styles.statNumber}>{swappedCount}</Text>
           <Text style={styles.statLabel}>Swapped</Text>
         </TouchableOpacity>
+
         <TouchableOpacity style={styles.statBox} onPress={() => scrollToSection("requests")}>
           <Text style={styles.statNumber}>{pendingRequestsCount}</Text>
-          <Text style={styles.statLabel}>SwapRequest</Text>
+          <Text style={styles.statLabel}>SwapReq</Text>
+        </TouchableOpacity>
+
+        {/* New Buy Requests Stat */}
+        <TouchableOpacity style={styles.statBox} onPress={() => scrollToSection("buyRequests")}>
+          <Text style={styles.statNumber}>{buyRequestsCount}</Text>
+          <Text style={styles.statLabel}>BuyReq</Text>
         </TouchableOpacity>
       </View>
+
 
       <ScrollView
         ref={scrollRef}
@@ -345,6 +416,16 @@ export default function MyActivityScreen() {
             </View>
           ))}
         </View>
+        {/* Buy Requests */}
+        <View onLayout={(e) => handleLayout("buyRequests", e)}>
+          <Text style={styles.sectionTitle}>Buy Requests</Text>
+        </View>
+        <ProductOwnerBuyerRequest
+          requests={buyRequests}
+          user={user}
+          onRefresh={onRefresh}
+        />
+
       </ScrollView>
     </Layout>
   );
