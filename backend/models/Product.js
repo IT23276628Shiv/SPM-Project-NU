@@ -31,7 +31,7 @@ const productSchema = new mongoose.Schema(
     buyRequests: [
       {
         _id: { type: mongoose.Schema.Types.ObjectId, auto: true },
-        buyerId: String, // Firebase UID
+        buyerId: { type: mongoose.Schema.Types.ObjectId, ref: "User" }, 
         status: { type: String, enum: ['pending', 'accepted', 'rejected', 'cancelled'], default: 'pending' },
         date: { type: Date, default: Date.now },
       },

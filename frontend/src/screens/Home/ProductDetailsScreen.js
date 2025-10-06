@@ -126,35 +126,39 @@ export default function ProductDetailsScreen() {
     }
   };
 
-  const handleBuy = async () => {
-    try {
-      const token = await user.getIdToken();
-      const response = await fetch(`${API_URL}/api/products/${product._id}/buy`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-      });
+const handleBuy = async () => {
+  try {
+    const token = await user.getIdToken();
+    const response = await fetch(`${API_URL}/api/products/${product._id}/buy`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+    });
 
-      const data = await response.json();
+    const data = await response.json();
 
-      if (response.ok) {
-        Alert.alert("Success", "Buy request sent successfully");
+    if (response.ok) {
+      Alert.alert("Success", "Buy request sent successfully");
 
-        // Update local product state with new buy request
-        setProduct(prev => ({
-          ...prev,
-          buyRequests: [...(prev.buyRequests || []), { buyerId: user.uid, status: "pending" }]
-        }));
-      } else {
-        Alert.alert("Error", data.error || "Failed to send buy request");
-      }
-    } catch (error) {
-      console.error("Buy request error:", error);
-      Alert.alert("Error", "Something went wrong");
+      // Use backend response for accurate buyerId
+      const newRequest = data.product.buyRequests.at(-1);
+
+      setProduct(prev => ({
+        ...prev,
+        buyRequests: [...(prev.buyRequests || []), newRequest]
+      }));
+    } else {
+      Alert.alert("Error", data.error || "Failed to send buy request");
     }
-  };
+  } catch (error) {
+    console.error("Buy request error:", error);
+    Alert.alert("Error", "Something went wrong");
+  }
+};
+
+
 
   const handleCall = () => {
     if (product.ownerContact) {
