@@ -1,4 +1,4 @@
-// frontend/src/screens/Chat/ChatListScreen.js - FIXED VERSION
+// frontend/src/screens/Chat/ChatListScreen.js - FIXED VERSION (Easy + Medium)
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   View,
@@ -34,7 +34,6 @@ import { RectButton } from "react-native-gesture-handler";
 import io from "socket.io-client";
 import { debounce } from "lodash";
 
-// Enable LayoutAnimation for Android
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
@@ -215,7 +214,6 @@ export default function ChatListScreen() {
   const { user } = useAuth();
   const navigation = useNavigation();
   
-  // Enhanced State Management
   const [conversations, setConversations] = useState([]);
   const [filtered, setFiltered] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -242,14 +240,12 @@ export default function ChatListScreen() {
   const [searchFocused, setSearchFocused] = useState(false);
   const [newMessagePulse, setNewMessagePulse] = useState(null);
 
-  // Refs
   const swipeableRefs = useRef(new Map());
   const socketRef = useRef(null);
   const listRef = useRef(null);
   const searchInputRef = useRef(null);
   const lastMessageTime = useRef({});
 
-  // Connection status configuration
   const connectionConfig = {
     connected: { 
       color: "#4CAF50", 
@@ -323,7 +319,6 @@ export default function ChatListScreen() {
           setConnectionStatus("error");
         });
 
-        // Real-time events
         socket.on('newMessage', (message) => {
           handleNewMessage(message);
           if (Platform.OS === 'android') {
@@ -363,6 +358,11 @@ export default function ChatListScreen() {
           updateUnreadCount(conversationId, unreadCount);
         });
 
+        // 🆕 FIX #7: Listen for conversation deletion events
+        socket.on('conversationDeleted', ({ conversationId }) => {
+          handleConversationDeleted(conversationId);
+        });
+
       } catch (error) {
         console.error('Socket initialization error:', error);
         setConnectionStatus("error");
@@ -381,7 +381,6 @@ export default function ChatListScreen() {
     };
   }, [user]);
 
-  // Enhanced message handling
   const handleNewMessage = useCallback((message) => {
     LayoutAnimation.configureNext(ANIMATION_CONFIG);
     
@@ -389,7 +388,6 @@ export default function ChatListScreen() {
       const now = Date.now();
       const conversationId = message.conversationId;
       
-      // Prevent duplicate rapid updates
       if (lastMessageTime.current[conversationId] && 
           now - lastMessageTime.current[conversationId] < 500) {
         return prev;
@@ -495,7 +493,12 @@ export default function ChatListScreen() {
     fetchConvs(true);
   }, []);
 
-  // Data fetching
+  // 🆕 FIX #7: Handle conversation deletion
+  const handleConversationDeleted = useCallback((conversationId) => {
+    console.log('🗑️ Conversation deleted:', conversationId);
+    setConversations(prev => prev.filter(conv => conv._id !== conversationId));
+  }, []);
+
   const fetchConvs = useCallback(async (silent = false, loadMore = false) => {
     if (!user) return;
 
@@ -562,16 +565,17 @@ export default function ChatListScreen() {
     }
   }, [user, page]);
 
-  // Search & Filtering
   const debouncedSearch = useRef(
     debounce((query, convos, filter, advFilters) => {
       applyFilters(convos, filter, query, advFilters);
     }, 400)
   ).current;
 
+  // 🆕 FIX #2: Apply filters in real-time with sorting
   const applyFilters = useCallback((convos, filter, query, advFilters) => {
-    let filteredList = convos;
+    let filteredList = [...convos];
     
+    // Quick filter
     switch (filter) {
       case "unread":
         filteredList = filteredList.filter(conv => conv.unreadCount > 0);
@@ -586,6 +590,7 @@ export default function ChatListScreen() {
         break;
     }
 
+    // Advanced filters
     if (advFilters.unreadOnly) {
       filteredList = filteredList.filter(conv => conv.unreadCount > 0);
     }
@@ -599,6 +604,7 @@ export default function ChatListScreen() {
       filteredList = filteredList.filter(conv => conv.product != null);
     }
 
+    // Date range filter
     const now = new Date();
     switch (advFilters.dateRange) {
       case 'today':
@@ -617,6 +623,7 @@ export default function ChatListScreen() {
         break;
     }
 
+    // Search query filter
     if (query.trim()) {
       const lower = query.toLowerCase();
       filteredList = filteredList.filter(conv => {
@@ -628,6 +635,7 @@ export default function ChatListScreen() {
       });
     }
 
+    // 🔧 FIX #2: Sort in real-time
     switch (advFilters.sortBy) {
       case 'recent':
         filteredList.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
@@ -636,14 +644,15 @@ export default function ChatListScreen() {
         filteredList.sort((a, b) => (b.unreadCount || 0) - (a.unreadCount || 0));
         break;
       case 'alphabetical':
-        filteredList.sort((a, b) => a.otherUser?.username?.localeCompare(b.otherUser?.username));
+        filteredList.sort((a, b) => 
+          (a.otherUser?.username || '').localeCompare(b.otherUser?.username || '')
+        );
         break;
     }
     
     setFiltered(filteredList);
   }, []);
 
-  // Selection Mode
   const toggleSelectionMode = useCallback(() => {
     LayoutAnimation.configureNext(ANIMATION_CONFIG);
     setIsSelectionMode(prev => !prev);
@@ -666,33 +675,37 @@ export default function ChatListScreen() {
     setSelectedConversations(new Set(filtered.map(conv => conv._id)));
   }, [filtered]);
 
-  // Bulk Operations
+  // 🔧 FIX #5: Delete with immediate confirmation
   const handleBulkDelete = useCallback(() => {
     if (selectedConversations.size === 0) return;
 
+    // ✅ Show alert immediately
     Alert.alert(
-      `Delete ${selectedConversations.size} Conversations`,
-      "This action cannot be undone.",
+      `Delete ${selectedConversations.size} Conversation${selectedConversations.size > 1 ? 's' : ''}`,
+      "This action cannot be undone. The conversation will be permanently deleted.",
       [
         { text: "Cancel", style: "cancel" },
         { 
           text: "Delete", 
           style: "destructive",
-          onPress: () => performBulkDelete()
+          onPress: performBulkDelete
         }
       ]
     );
   }, [selectedConversations.size]);
 
+  // 🆕 FIX #7: Permanent deletion from DB
   const performBulkDelete = useCallback(async () => {
     try {
       const token = await user.getIdToken();
       const conversationIds = Array.from(selectedConversations);
       
+      // Optimistic update
       setConversations(prev => prev.filter(conv => !selectedConversations.has(conv._id)));
       
-      await fetch(`${API_URL}/api/messages/conversations/bulk-delete`, {
-        method: "POST",
+      // 🔧 FIX #7: Delete from backend DB
+      const response = await fetch(`${API_URL}/api/messages/conversations/bulk-delete`, {
+        method: "DELETE",
         headers: { 
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -700,40 +713,75 @@ export default function ChatListScreen() {
         body: JSON.stringify({ conversationIds })
       });
 
+      if (!response.ok) {
+        throw new Error('Failed to delete conversations');
+      }
+
+      // Emit socket event to notify other devices
+      if (socketRef.current) {
+        conversationIds.forEach(id => {
+          socketRef.current.emit('conversationDeleted', { conversationId: id });
+        });
+      }
+
       setSelectedConversations(new Set());
       setIsSelectionMode(false);
     } catch (err) {
+      console.error('Delete error:', err);
       fetchConvs(true);
       Alert.alert("Error", "Failed to delete conversations");
     }
   }, [selectedConversations, user]);
 
+  // 🆕 FIX #4: Archive functionality
   const handleBulkArchive = useCallback(async () => {
     try {
       const token = await user.getIdToken();
       const conversationIds = Array.from(selectedConversations);
       
+      // Check if conversations are already archived
+      const firstConv = conversations.find(c => c._id === conversationIds[0]);
+      const shouldArchive = !firstConv?.isArchived;
+      
+      // Optimistic update
       setConversations(prev => prev.map(conv => 
-        selectedConversations.has(conv._id) ? { ...conv, isArchived: true } : conv
+        selectedConversations.has(conv._id) ? { ...conv, isArchived: shouldArchive } : conv
       ));
 
-      await fetch(`${API_URL}/api/messages/conversations/bulk-archive`, {
+      const response = await fetch(`${API_URL}/api/messages/conversations/bulk-archive`, {
         method: "POST",
         headers: { 
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ conversationIds, archive: true })
+        body: JSON.stringify({ conversationIds, archive: shouldArchive })
       });
+
+      if (!response.ok) {
+        throw new Error('Failed to archive conversations');
+      }
+
+      // Emit socket event
+      if (socketRef.current) {
+        conversationIds.forEach(id => {
+          socketRef.current.emit('conversationArchived', { 
+            conversationId: id, 
+            archived: shouldArchive 
+          });
+        });
+      }
 
       setSelectedConversations(new Set());
       setIsSelectionMode(false);
+      
+      Alert.alert('Success', `Conversations ${shouldArchive ? 'archived' : 'unarchived'}`);
     } catch (err) {
+      console.error('Archive error:', err);
       fetchConvs(true);
+      Alert.alert('Error', 'Failed to archive conversations');
     }
-  }, [selectedConversations, user]);
+  }, [selectedConversations, user, conversations]);
 
-  // Time formatting
   const formatTime = useCallback((dateString) => {
     if (!dateString) return "";
     
@@ -757,7 +805,6 @@ export default function ChatListScreen() {
     });
   }, []);
 
-  // Focus effect
   useFocusEffect(
     useCallback(() => {
       fetchConvs();
@@ -770,10 +817,10 @@ export default function ChatListScreen() {
     }, [user])
   );
 
-  // Filter effect
+  // 🆕 FIX #2: Re-apply filters when conversations or filters change
   useEffect(() => {
-    debouncedSearch(searchQuery, conversations, activeFilter, advancedFilters);
-  }, [conversations, activeFilter, searchQuery, advancedFilters, debouncedSearch]);
+    applyFilters(conversations, activeFilter, searchQuery, advancedFilters);
+  }, [conversations, activeFilter, searchQuery, advancedFilters, applyFilters]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -795,7 +842,7 @@ export default function ChatListScreen() {
     }
   }, [isLoadingMore, hasMore]);
 
-  // Swipe actions
+  // 🔧 FIX #5: Simplified delete action
   const renderRightActions = useCallback((progress, dragX, item) => {
     const translateX = dragX.interpolate({
       inputRange: [-160, 0],
@@ -810,6 +857,7 @@ export default function ChatListScreen() {
             style={[styles.swipeAction, styles.archiveAction]}
             onPress={() => {
               swipeableRefs.current.get(item._id)?.close();
+              setSelectedConversations(new Set([item._id]));
               handleBulkArchive();
             }}
           >
@@ -830,6 +878,7 @@ export default function ChatListScreen() {
             onPress={() => {
               swipeableRefs.current.get(item._id)?.close();
               setSelectedConversations(new Set([item._id]));
+              // ✅ FIX #5: Call handleBulkDelete directly (alert shows immediately)
               handleBulkDelete();
             }}
           >
@@ -841,7 +890,6 @@ export default function ChatListScreen() {
     );
   }, [handleBulkArchive, handleBulkDelete]);
 
-  // Typing Indicator
   const TypingIndicator = ({ conversationId }) => {
     const typingData = typingUsers[conversationId];
     if (!typingData) return null;
@@ -853,14 +901,12 @@ export default function ChatListScreen() {
     );
   };
 
-  // Online Indicator
   const OnlineIndicator = () => (
     <View style={styles.onlineIndicator}>
       <View style={styles.onlinePulse} />
     </View>
   );
 
-  // Render Item
   const renderItem = useCallback(({ item }) => {
     const isSelected = selectedConversations.has(item._id);
     const isUnread = item.unreadCount > 0;
@@ -920,6 +966,14 @@ export default function ChatListScreen() {
                   </Text>
                 </View>
               )}
+              {/* 🔧 FIX #1: Unread badge on avatar */}
+              {isUnread && (
+                <View style={styles.unreadBadge}>
+                  <Text style={styles.unreadBadgeText}>
+                    {item.unreadCount > 99 ? '99+' : item.unreadCount}
+                  </Text>
+                </View>
+              )}
             </View>
             
             <View style={styles.content}>
@@ -970,7 +1024,14 @@ export default function ChatListScreen() {
                   </View>
                 )}
                 {isOnline && <OnlineIndicator />}
-                {isUnread && <View style={styles.unreadBadge} />}
+                {/* 🔧 FIX #1: Move unread count to badge on avatar */}
+                {isUnread && (
+                  <View style={styles.unreadBadge}>
+                    <Text style={styles.unreadBadgeText}>
+                      {item.unreadCount > 99 ? '99+' : item.unreadCount}
+                    </Text>
+                  </View>
+                )}
                 {isArchived && (
                   <View style={styles.archivedBadge}>
                     <MaterialCommunityIcons name="archive" size={12} color="#FFFFFF" />
@@ -1015,14 +1076,6 @@ export default function ChatListScreen() {
                     <MaterialCommunityIcons name="image" size={16} color="#8E8E93" />
                   )}
                 </View>
-                
-                {isUnread && !isTyping && (
-                  <View style={styles.unreadCountBadge}>
-                    <Text style={styles.unreadCountText}>
-                      {item.unreadCount > 99 ? '99+' : item.unreadCount}
-                    </Text>
-                  </View>
-                )}
               </View>
 
               {item.product?.imagesUrls?.[0] && (
@@ -1052,7 +1105,8 @@ export default function ChatListScreen() {
     navigation,
     toggleConversationSelection,
     toggleSelectionMode,
-    formatTime
+    formatTime,
+    renderRightActions
   ]);
 
   const currentStatus = connectionConfig[connectionStatus];
@@ -1061,7 +1115,6 @@ export default function ChatListScreen() {
     <Layout>
       <StatusBar barStyle="dark-content" backgroundColor="#F5F7F6" />
       
-      {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerTop}>
           {isSelectionMode ? (
@@ -1097,18 +1150,12 @@ export default function ChatListScreen() {
                 <TouchableOpacity onPress={toggleSelectionMode} style={styles.headerButton}>
                   <MaterialCommunityIcons name="select" size={24} color="#2F6F61" />
                 </TouchableOpacity>
-                <TouchableOpacity 
-                  style={styles.newChatButton}
-                  onPress={() => navigation.navigate("NewChat")}
-                >
-                  <MaterialCommunityIcons name="plus" size={20} color="#FFFFFF" />
-                </TouchableOpacity>
+                {/* 🔧 FIX #3: Remove new chat button */}
               </View>
             </>
           )}
         </View>
 
-        {/* Connection Status */}
         <View style={[styles.statusContainer, { backgroundColor: currentStatus.color }]}>
           <MaterialCommunityIcons 
             name={currentStatus.icon} 
@@ -1126,7 +1173,6 @@ export default function ChatListScreen() {
         </View>
       </View>
 
-      {/* Search Section */}
       <View style={[styles.searchSection, searchFocused && styles.searchSectionFocused]}>
         <View style={styles.searchBox}>
           <MaterialCommunityIcons name="magnify" size={20} color="#8E8E93" />
@@ -1148,7 +1194,6 @@ export default function ChatListScreen() {
           )}
         </View>
 
-        {/* Quick Filters */}
         <ScrollView 
           horizontal 
           showsHorizontalScrollIndicator={false}
@@ -1185,7 +1230,6 @@ export default function ChatListScreen() {
         </ScrollView>
       </View>
 
-      {/* Conversation List */}
       <View style={styles.listContainer}>
         {isLoading && filtered.length === 0 ? (
           <View style={styles.loadingContainer}>
@@ -1245,7 +1289,6 @@ export default function ChatListScreen() {
         )}
       </View>
 
-      {/* Advanced Filters Modal */}
       <Modal
         visible={showFiltersModal}
         animationType="slide"
@@ -1258,12 +1301,10 @@ export default function ChatListScreen() {
           onClose={() => setShowFiltersModal(false)}
           onApply={() => {
             setShowFiltersModal(false);
-            applyFilters(conversations, activeFilter, searchQuery, advancedFilters);
           }}
         />
       </Modal>
 
-      {/* Selection Mode FAB */}
       {isSelectionMode && selectedConversations.size > 0 && (
         <TouchableOpacity
           style={[styles.fab, styles.deleteFab]}
@@ -1326,19 +1367,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 2,
-  },
-  newChatButton: {
-    backgroundColor: "#2F6F61",
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 3,
   },
   selectionHeader: {
     flexDirection: 'row',
@@ -1538,21 +1566,30 @@ const styles = StyleSheet.create({
     borderRadius: 7,
     backgroundColor: '#4CAF50',
   },
+  // 🔧 FIX #1: Updated unread badge styles
   unreadBadge: {
     position: "absolute",
-    top: -2,
-    right: -2,
-    width: 14,
-    height: 14,
-    borderRadius: 7,
+    top: -4,
+    right: -4,
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
     backgroundColor: "#FF3B30",
     borderWidth: 2,
     borderColor: "#FFFFFF",
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  unreadBadgeText: {
+    color: "#FFFFFF",
+    fontSize: 10,
+    fontWeight: "700",
   },
   archivedBadge: {
     position: "absolute",
     bottom: -2,
-    right: -2,
+    left: -2,
     width: 20,
     height: 20,
     borderRadius: 10,
@@ -1622,23 +1659,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#2F6F61',
     fontStyle: 'italic',
-  },
-  unreadCountBadge: {
-    position: 'absolute',
-    top: -5,
-    right: 0,
-    backgroundColor: '#FF3B30',
-    borderRadius: 10,
-    minWidth: 20,
-    height: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 6,
-  },
-  unreadCountText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '600',
   },
   productThumb: {
     width: 50,
@@ -1743,7 +1763,6 @@ const styles = StyleSheet.create({
     top: 8,
     right: 8,
   },
-  // Modal Styles
   modalContainer: {
     flex: 1,
     backgroundColor: '#F5F7F6',
