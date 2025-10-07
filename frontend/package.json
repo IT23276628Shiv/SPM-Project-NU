@@ -46,7 +46,9 @@
     "react-native-screens": "~4.16.0",
     "react-native-vector-icons": "^10.3.0",
     "react-native-web": "^0.21.0",
-    "socket.io-client": "^4.8.1"
+    "socket.io-client": "^4.8.1",
+    "expo-auth-session": "~7.0.8",
+    "expo-web-browser": "~15.0.8"
   },
   "devDependencies": {
     "@babel/core": "^7.20.0"

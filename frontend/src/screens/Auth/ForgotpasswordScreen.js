@@ -1,5 +1,5 @@
 // screens/ForgotPasswordScreen.js
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -11,14 +11,18 @@ import {
   Platform,
   ScrollView,
   Animated,
-  Alert
+  Alert,
+  ActivityIndicator
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { sendPasswordResetEmail } from 'firebase/auth';
+import authfirebase from '../../../services/firebaseAuth'; // ✅ Make sure this exports getAuth(app)
 
-const { width, height } = Dimensions.get('window');
+const { width } = Dimensions.get('window');
 
 export default function ForgotPasswordScreen({ navigation }) {
   const [email, setEmail] = useState('');
+  const [isFocused, setIsFocused] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
   // Animations
@@ -26,7 +30,7 @@ export default function ForgotPasswordScreen({ navigation }) {
   const slideAnim = useRef(new Animated.Value(50)).current;
   const buttonScale = useRef(new Animated.Value(1)).current;
 
-  React.useEffect(() => {
+  useEffect(() => {
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
@@ -66,17 +70,14 @@ export default function ForgotPasswordScreen({ navigation }) {
     setIsLoading(true);
 
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      console.log('Reset link sent to:', email);
+      await sendPasswordResetEmail(authfirebase, email);
       Alert.alert(
         "Reset Link Sent", 
         "If an account exists with this email, you will receive a password reset link shortly.",
         [{ text: "OK", onPress: () => navigation.goBack() }]
       );
     } catch (error) {
-      Alert.alert("Error", "Failed to send reset link. Please try again.");
+      Alert.alert("Error", error.message);
     } finally {
       setIsLoading(false);
     }
@@ -98,10 +99,7 @@ export default function ForgotPasswordScreen({ navigation }) {
         <Animated.View 
           style={[
             styles.content,
-            {
-              opacity: fadeAnim,
-              transform: [{ translateY: slideAnim }]
-            }
+            { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }
           ]}
         >
           {/* Header Section */}
@@ -113,12 +111,14 @@ export default function ForgotPasswordScreen({ navigation }) {
             >
               <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
             </TouchableOpacity>
+
             <View style={styles.logoContainer}>
               <Text style={styles.logoText}>RM</Text>
             </View>
+
             <Text style={styles.title}>Forgot Password?</Text>
             <Text style={styles.subtitle}>
-              Enter your registered email below and we'll send you a link to reset your password.
+              Enter your registered email below and we’ll send you a link to reset your password.
             </Text>
           </View>
 
@@ -129,8 +129,16 @@ export default function ForgotPasswordScreen({ navigation }) {
               <Text style={styles.inputLabel}>
                 Email Address <Text style={styles.required}>*</Text>
               </Text>
-              <View style={styles.inputWrapper}>
-                <Ionicons name="mail-outline" size={20} color="#8E8E93" style={styles.inputIcon} />
+              <View style={[
+                styles.inputWrapper,
+                isFocused && styles.inputFocused
+              ]}>
+                <Ionicons 
+                  name="mail-outline" 
+                  size={20} 
+                  color={isFocused ? '#2F6F61' : '#8E8E93'} 
+                  style={styles.inputIcon} 
+                />
                 <TextInput
                   style={styles.input}
                   placeholder="Enter your email address"
@@ -140,6 +148,8 @@ export default function ForgotPasswordScreen({ navigation }) {
                   keyboardType="email-address"
                   autoCapitalize="none"
                   autoComplete="email"
+                  onFocus={() => setIsFocused(true)}
+                  onBlur={() => setIsFocused(false)}
                 />
               </View>
             </View>
@@ -153,10 +163,7 @@ export default function ForgotPasswordScreen({ navigation }) {
                 disabled={isLoading}
               >
                 {isLoading ? (
-                  <View style={styles.loadingContainer}>
-                    <Ionicons name="reload" size={20} color="#FFFFFF" style={styles.loadingIcon} />
-                    <Text style={styles.buttonText}>Sending Reset Link...</Text>
-                  </View>
+                  <ActivityIndicator size="small" color="#FFFFFF" />
                 ) : (
                   <>
                     <Text style={styles.buttonText}>Send Reset Link</Text>
@@ -202,10 +209,8 @@ const styles = StyleSheet.create({
   },
   backgroundOrb2: {
     backgroundColor: '#2F6F61',
-    top: 'auto',
     bottom: -width * 0.5,
     left: -width * 0.3,
-    right: 'auto',
     opacity: 0.3,
   },
   scrollContainer: { 
@@ -289,6 +294,10 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.1)',
     paddingHorizontal: 16,
   },
+  inputFocused: {
+    borderColor: '#2F6F61',
+    backgroundColor: 'rgba(47, 111, 97, 0.15)',
+  },
   inputIcon: {
     marginRight: 12,
   },
@@ -333,13 +342,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  loadingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  loadingIcon: {
-    marginRight: 8,
   },
   backLink: {
     flexDirection: 'row',

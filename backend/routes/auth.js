@@ -49,6 +49,7 @@ router.post('/register', async (req, res) => {
   }
 });
 
+
 // Update user profile (second step - adds Firebase UID and additional info)
 router.put('/:userId/updateProfile', async (req, res) => {
   try {
