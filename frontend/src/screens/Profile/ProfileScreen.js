@@ -16,6 +16,7 @@ import * as ImagePicker from "expo-image-picker";
 import DropDownPicker from "react-native-dropdown-picker";
 import colors from "../../constants/colors";
 import { API_URL } from "../../constants/config";
+import Layout from "../../components/Layouts";
 
 const { width } = Dimensions.get("window");
 
@@ -122,6 +123,7 @@ export default function ProfileScreen() {
   };
 
   return (
+    <Layout>
     <ScrollView style={styles.container}>
       <View style={styles.profilePicContainer}>
         <TouchableOpacity onPress={handlePickImage} disabled={imageUploading}>
@@ -210,6 +212,7 @@ export default function ProfileScreen() {
         <Text style={styles.logoutText}>Sign Out</Text>
       </TouchableOpacity>
     </ScrollView>
+    </Layout>
   );
 }
 

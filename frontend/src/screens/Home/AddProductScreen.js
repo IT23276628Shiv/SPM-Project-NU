@@ -18,6 +18,7 @@ import * as ImagePicker from "expo-image-picker";
 import axios from "axios";
 import { API_URL } from "../../constants/config";
 import { useAuth } from "../../context/AuthContext";
+import Layout from "../../components/Layouts";
 
 const { width } = Dimensions.get("window");
 
@@ -412,6 +413,7 @@ export default function AddProductScreen({ navigation }) {
   );
 
   return (
+    <Layout>
     <KeyboardAvoidingView 
       style={styles.container}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -557,7 +559,7 @@ export default function AddProductScreen({ navigation }) {
                   </Text>
                 </TouchableOpacity>
               ))}
-              <TouchableOpacity
+              {/* <TouchableOpacity
                 style={[
                   styles.chip,
                   categoryId === "other" && styles.chipSelected,
@@ -572,11 +574,11 @@ export default function AddProductScreen({ navigation }) {
                 >
                   Other
                 </Text>
-              </TouchableOpacity>
+              </TouchableOpacity> */}
             </View>
           </ScrollView>
 
-          {categoryId === "other" && (
+          {/* {categoryId === "other" && (
             <View style={styles.inputGroup}>
               <View style={styles.labelContainer}>
                 <Text style={styles.label}>Custom Category</Text>
@@ -590,7 +592,7 @@ export default function AddProductScreen({ navigation }) {
                 onChangeText={setCustomCategory}
               />
             </View>
-          )}
+          )} */}
         </View>
 
         {/* Condition */}
@@ -766,6 +768,7 @@ export default function AddProductScreen({ navigation }) {
       {/* District Modal */}
       <DistrictModal />
     </KeyboardAvoidingView>
+    </Layout>
   );
 }
 
@@ -781,8 +784,7 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   header: {
-    padding: 24,
-    marginTop:20,
+    padding: 14,
     paddingBottom: 16,
     backgroundColor: "#FFFFFF",
     borderBottomWidth: 1,
@@ -898,12 +900,13 @@ const styles = StyleSheet.create({
   },
   chipScroll: {
     marginHorizontal: -24,
-    paddingHorizontal: 24,
+    // paddingHorizontal: 24,
   },
   chipGroup: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
+    
   },
   chip: {
     backgroundColor: "#F8F9FA",
