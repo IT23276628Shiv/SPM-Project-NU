@@ -545,6 +545,41 @@ router.patch("/:productId/buy/:requestId/respond", authMiddleware, async (req, r
   }
 });
 
+// Increment product views count
+router.post("/:id/view", authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    // console.log("🟢 /view endpoint hit for product:", id);
+
+    const product = await Product.findById(id).populate("ownerId", "firebaseUid");
+    if (!product) {
+      console.log("❌ Product not found:", id);
+      return res.status(404).json({ error: "Product not found" });
+    }
+
+    // console.log("👤 Viewer Mongo ID:", req.userId);         // MongoDB user ID from middleware
+    // console.log("🏠 Owner UID (Firebase):", product.ownerId?.firebaseUid);
+    // console.log("📝 Owner Mongo ID:", product.ownerId?._id);
+
+    // Skip counting if owner views
+    if (req.userId && product.ownerId?._id.equals(req.userId)) {
+      // console.log("⚠️ Owner viewed product, not counting");
+      return res.json({ success: false, message: "Owner view not counted" });
+    }
+
+    // Increment views count
+    product.viewsCount = (product.viewsCount || 0) + 1;
+    await product.save();
+
+    // console.log("✅ View incremented. New count:", product.viewsCount);
+
+    res.json({ success: true, viewsCount: product.viewsCount });
+  } catch (err) {
+    console.error("💥 Error incrementing views:", err.message);
+    res.status(500).json({ error: "Failed to increment views" });
+  }
+});
+
 
 
 
