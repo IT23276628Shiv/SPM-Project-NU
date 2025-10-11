@@ -48,62 +48,6 @@ router.get('/conversations', authMiddleware, async (req, res) => {
   }
 });
 
-// 🔧 FIX #10: Archive conversations with better error handling
-router.post('/conversations/bulk-archive', authMiddleware, async (req, res) => {
-  try {
-    const { conversationIds, archive } = req.body;
-
-    console.log('📦 Archive request:', { conversationIds, archive, userId: req.userId });
-
-    if (!conversationIds || !Array.isArray(conversationIds) || conversationIds.length === 0) {
-      return res.status(400).json({ error: 'conversationIds array is required' });
-    }
-
-    if (typeof archive !== 'boolean') {
-      return res.status(400).json({ error: 'archive boolean is required' });
-    }
-
-    // Verify user has access to these conversations
-    const conversations = await Conversation.find({
-      _id: { $in: conversationIds },
-      participants: req.userId
-    });
-
-    console.log('📦 Found conversations:', conversations.length);
-
-    if (conversations.length === 0) {
-      return res.status(404).json({ error: 'No conversations found' });
-    }
-
-    if (conversations.length !== conversationIds.length) {
-      console.warn('⚠️ Some conversations not found or access denied');
-    }
-
-    // Update archive status
-    const updateResult = await Conversation.updateMany(
-      { 
-        _id: { $in: conversations.map(c => c._id) },
-        participants: req.userId
-      },
-      { $set: { isArchived: archive } }
-    );
-
-    console.log('✅ Archive update result:', updateResult);
-
-    res.json({ 
-      message: `Conversations ${archive ? 'archived' : 'unarchived'} successfully`,
-      updatedCount: updateResult.modifiedCount,
-      success: true
-    });
-  } catch (error) {
-    console.error('❌ Error archiving conversations:', error);
-    res.status(500).json({ 
-      error: 'Failed to archive conversations',
-      details: error.message
-    });
-  }
-});
-
 // 🔧 FIX #9: Permanent conversation deletion with better error handling
 router.delete('/conversations/bulk-delete', authMiddleware, async (req, res) => {
   try {
@@ -378,7 +322,7 @@ router.put('/conversations/:conversationId/mark-read', authMiddleware, async (re
   }
 });
 
-// Start a conversation
+// 🔧 FIX #1: Start a conversation - Fixed duplicate conversations
 router.post('/conversations/start', authMiddleware, async (req, res) => {
   try {
     const { receiverId, productId } = req.body;
@@ -387,9 +331,12 @@ router.post('/conversations/start', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'receiverId and productId are required' });
     }
 
+    // 🔧 FIX: Check for existing conversation regardless of participant order
     let conversation = await Conversation.findOne({
-      participants: { $all: [req.userId, receiverId] },
-      productId: productId
+      $or: [
+        { participants: [req.userId, receiverId], productId: productId },
+        { participants: [receiverId, req.userId], productId: productId }
+      ]
     });
 
     if (!conversation) {

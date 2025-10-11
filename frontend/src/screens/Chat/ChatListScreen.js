@@ -1,4 +1,4 @@
-// frontend/src/screens/Chat/ChatListScreen.js - FIXED VERSION (Easy + Medium)
+// frontend/src/screens/Chat/ChatListScreen.js - FIXED VERSION
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   View,
@@ -350,15 +350,10 @@ export default function ChatListScreen() {
           handleUserOnlineStatus(userId, isOnline);
         });
 
-        socket.on('conversationArchived', ({ conversationId, archived }) => {
-          handleConversationArchive(conversationId, archived);
-        });
-
         socket.on('newUnreadCount', ({ conversationId, unreadCount }) => {
           updateUnreadCount(conversationId, unreadCount);
         });
 
-        // 🆕 FIX #7: Listen for conversation deletion events
         socket.on('conversationDeleted', ({ conversationId }) => {
           handleConversationDeleted(conversationId);
         });
@@ -449,12 +444,6 @@ export default function ChatListScreen() {
     });
   }, []);
 
-  const handleConversationArchive = useCallback((conversationId, archived) => {
-    setConversations(prev => prev.map(conv => 
-      conv._id === conversationId ? { ...conv, isArchived: archived } : conv
-    ));
-  }, []);
-
   const updateUnreadCount = useCallback((conversationId, unreadCount) => {
     setConversations(prev => prev.map(conv => 
       conv._id === conversationId ? { ...conv, unreadCount } : conv
@@ -493,7 +482,6 @@ export default function ChatListScreen() {
     fetchConvs(true);
   }, []);
 
-  // 🆕 FIX #7: Handle conversation deletion
   const handleConversationDeleted = useCallback((conversationId) => {
     console.log('🗑️ Conversation deleted:', conversationId);
     setConversations(prev => prev.filter(conv => conv._id !== conversationId));
@@ -571,7 +559,6 @@ export default function ChatListScreen() {
     }, 400)
   ).current;
 
-  // 🆕 FIX #2: Apply filters in real-time with sorting
   const applyFilters = useCallback((convos, filter, query, advFilters) => {
     let filteredList = [...convos];
     
@@ -582,9 +569,6 @@ export default function ChatListScreen() {
         break;
       case "groups":
         filteredList = filteredList.filter(conv => conv.isGroupChat);
-        break;
-      case "archived":
-        filteredList = filteredList.filter(conv => conv.isArchived);
         break;
       default:
         break;
@@ -635,7 +619,7 @@ export default function ChatListScreen() {
       });
     }
 
-    // 🔧 FIX #2: Sort in real-time
+    // Sort in real-time
     switch (advFilters.sortBy) {
       case 'recent':
         filteredList.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
@@ -675,26 +659,7 @@ export default function ChatListScreen() {
     setSelectedConversations(new Set(filtered.map(conv => conv._id)));
   }, [filtered]);
 
-  // 🔧 FIX #5: Delete with immediate confirmation
-  const handleBulkDelete = useCallback(() => {
-    if (selectedConversations.size === 0) return;
-
-    // ✅ Show alert immediately
-    Alert.alert(
-      `Delete ${selectedConversations.size} Conversation${selectedConversations.size > 1 ? 's' : ''}`,
-      "This action cannot be undone. The conversation will be permanently deleted.",
-      [
-        { text: "Cancel", style: "cancel" },
-        { 
-          text: "Delete", 
-          style: "destructive",
-          onPress: performBulkDelete
-        }
-      ]
-    );
-  }, [selectedConversations.size]);
-
-  // 🆕 FIX #7: Permanent deletion from DB
+  // 🔧 FIX #3: Simplified delete function
   const performBulkDelete = useCallback(async () => {
     try {
       const token = await user.getIdToken();
@@ -703,7 +668,6 @@ export default function ChatListScreen() {
       // Optimistic update
       setConversations(prev => prev.filter(conv => !selectedConversations.has(conv._id)));
       
-      // 🔧 FIX #7: Delete from backend DB
       const response = await fetch(`${API_URL}/api/messages/conversations/bulk-delete`, {
         method: "DELETE",
         headers: { 
@@ -732,55 +696,6 @@ export default function ChatListScreen() {
       Alert.alert("Error", "Failed to delete conversations");
     }
   }, [selectedConversations, user]);
-
-  // 🆕 FIX #4: Archive functionality
-  const handleBulkArchive = useCallback(async () => {
-    try {
-      const token = await user.getIdToken();
-      const conversationIds = Array.from(selectedConversations);
-      
-      // Check if conversations are already archived
-      const firstConv = conversations.find(c => c._id === conversationIds[0]);
-      const shouldArchive = !firstConv?.isArchived;
-      
-      // Optimistic update
-      setConversations(prev => prev.map(conv => 
-        selectedConversations.has(conv._id) ? { ...conv, isArchived: shouldArchive } : conv
-      ));
-
-      const response = await fetch(`${API_URL}/api/messages/conversations/bulk-archive`, {
-        method: "POST",
-        headers: { 
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ conversationIds, archive: shouldArchive })
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to archive conversations');
-      }
-
-      // Emit socket event
-      if (socketRef.current) {
-        conversationIds.forEach(id => {
-          socketRef.current.emit('conversationArchived', { 
-            conversationId: id, 
-            archived: shouldArchive 
-          });
-        });
-      }
-
-      setSelectedConversations(new Set());
-      setIsSelectionMode(false);
-      
-      Alert.alert('Success', `Conversations ${shouldArchive ? 'archived' : 'unarchived'}`);
-    } catch (err) {
-      console.error('Archive error:', err);
-      fetchConvs(true);
-      Alert.alert('Error', 'Failed to archive conversations');
-    }
-  }, [selectedConversations, user, conversations]);
 
   const formatTime = useCallback((dateString) => {
     if (!dateString) return "";
@@ -817,7 +732,6 @@ export default function ChatListScreen() {
     }, [user])
   );
 
-  // 🆕 FIX #2: Re-apply filters when conversations or filters change
   useEffect(() => {
     applyFilters(conversations, activeFilter, searchQuery, advancedFilters);
   }, [conversations, activeFilter, searchQuery, advancedFilters, applyFilters]);
@@ -842,11 +756,11 @@ export default function ChatListScreen() {
     }
   }, [isLoadingMore, hasMore]);
 
-  // 🔧 FIX #5: Simplified delete action
+  // 🔧 FIX #3: Fixed swipe delete action with immediate alert
   const renderRightActions = useCallback((progress, dragX, item) => {
     const translateX = dragX.interpolate({
-      inputRange: [-160, 0],
-      outputRange: [0, 160],
+      inputRange: [-80, 0],
+      outputRange: [0, 80],
       extrapolate: 'clamp',
     });
 
@@ -854,32 +768,30 @@ export default function ChatListScreen() {
       <View style={styles.swipeActions}>
         <Animated.View style={[styles.swipeActionWrapper, { transform: [{ translateX }] }]}>
           <RectButton 
-            style={[styles.swipeAction, styles.archiveAction]}
-            onPress={() => {
-              swipeableRefs.current.get(item._id)?.close();
-              setSelectedConversations(new Set([item._id]));
-              handleBulkArchive();
-            }}
-          >
-            <MaterialCommunityIcons 
-              name={item.isArchived ? "archive-arrow-up" : "archive"} 
-              size={24} 
-              color="#FFFFFF" 
-            />
-            <Text style={styles.swipeActionText}>
-              {item.isArchived ? "Unarchive" : "Archive"}
-            </Text>
-          </RectButton>
-        </Animated.View>
-        
-        <Animated.View style={[styles.swipeActionWrapper, { transform: [{ translateX }] }]}>
-          <RectButton 
             style={[styles.swipeAction, styles.deleteAction]}
             onPress={() => {
-              swipeableRefs.current.get(item._id)?.close();
-              setSelectedConversations(new Set([item._id]));
-              // ✅ FIX #5: Call handleBulkDelete directly (alert shows immediately)
-              handleBulkDelete();
+              const ref = swipeableRefs.current.get(item._id);
+              if (ref) {
+                ref.close();
+              }
+              // Use setTimeout to ensure swipe closes before alert shows
+              setTimeout(() => {
+                setSelectedConversations(new Set([item._id]));
+                Alert.alert(
+                  'Delete Conversation',
+                  "This action cannot be undone. The conversation will be permanently deleted.",
+                  [
+                    { text: "Cancel", style: "cancel" },
+                    { 
+                      text: "Delete", 
+                      style: "destructive",
+                      onPress: async () => {
+                        await performBulkDelete();
+                      }
+                    }
+                  ]
+                );
+              }, 300);
             }}
           >
             <MaterialCommunityIcons name="delete" size={24} color="#FFFFFF" />
@@ -888,7 +800,7 @@ export default function ChatListScreen() {
         </Animated.View>
       </View>
     );
-  }, [handleBulkArchive, handleBulkDelete]);
+  }, [performBulkDelete]);
 
   const TypingIndicator = ({ conversationId }) => {
     const typingData = typingUsers[conversationId];
@@ -910,7 +822,6 @@ export default function ChatListScreen() {
   const renderItem = useCallback(({ item }) => {
     const isSelected = selectedConversations.has(item._id);
     const isUnread = item.unreadCount > 0;
-    const isArchived = item.isArchived;
     const isOnline = onlineUsers.has(item.otherUser?._id);
     const isTyping = typingUsers[item._id];
     const hasPulse = newMessagePulse === item._id;
@@ -966,7 +877,6 @@ export default function ChatListScreen() {
                   </Text>
                 </View>
               )}
-              {/* 🔧 FIX #1: Unread badge on avatar */}
               {isUnread && (
                 <View style={styles.unreadBadge}>
                   <Text style={styles.unreadBadgeText}>
@@ -997,7 +907,6 @@ export default function ChatListScreen() {
               style={[
                 styles.card,
                 isUnread && styles.unreadCard,
-                isArchived && styles.archivedCard,
               ]}
               onPress={() => {
                 navigation.navigate("Chat", { 
@@ -1024,17 +933,11 @@ export default function ChatListScreen() {
                   </View>
                 )}
                 {isOnline && <OnlineIndicator />}
-                {/* 🔧 FIX #1: Move unread count to badge on avatar */}
                 {isUnread && (
                   <View style={styles.unreadBadge}>
                     <Text style={styles.unreadBadgeText}>
                       {item.unreadCount > 99 ? '99+' : item.unreadCount}
                     </Text>
-                  </View>
-                )}
-                {isArchived && (
-                  <View style={styles.archivedBadge}>
-                    <MaterialCommunityIcons name="archive" size={12} color="#FFFFFF" />
                   </View>
                 )}
               </View>
@@ -1065,7 +968,6 @@ export default function ChatListScreen() {
                     style={[
                       styles.messageText, 
                       isUnread && styles.unreadText,
-                      isArchived && styles.archivedText,
                       isTyping && styles.typingMessageText
                     ]} 
                     numberOfLines={1}
@@ -1129,10 +1031,23 @@ export default function ChatListScreen() {
                 <TouchableOpacity onPress={selectAllConversations} style={styles.headerButton}>
                   <MaterialCommunityIcons name="select-all" size={24} color="#2F6F61" />
                 </TouchableOpacity>
-                <TouchableOpacity onPress={handleBulkArchive} style={styles.headerButton}>
-                  <MaterialCommunityIcons name="archive" size={24} color="#FF9500" />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={handleBulkDelete} style={styles.headerButton}>
+                <TouchableOpacity 
+                  onPress={() => {
+                    Alert.alert(
+                      `Delete ${selectedConversations.size} Conversation${selectedConversations.size > 1 ? 's' : ''}`,
+                      "This action cannot be undone. The conversation will be permanently deleted.",
+                      [
+                        { text: "Cancel", style: "cancel" },
+                        { 
+                          text: "Delete", 
+                          style: "destructive",
+                          onPress: performBulkDelete
+                        }
+                      ]
+                    );
+                  }} 
+                  style={styles.headerButton}
+                >
                   <MaterialCommunityIcons name="delete" size={24} color="#FF3B30" />
                 </TouchableOpacity>
               </View>
@@ -1150,7 +1065,6 @@ export default function ChatListScreen() {
                 <TouchableOpacity onPress={toggleSelectionMode} style={styles.headerButton}>
                   <MaterialCommunityIcons name="select" size={24} color="#2F6F61" />
                 </TouchableOpacity>
-                {/* 🔧 FIX #3: Remove new chat button */}
               </View>
             </>
           )}
@@ -1218,13 +1132,6 @@ export default function ChatListScreen() {
             filter="groups" 
             icon="account-group" 
             active={activeFilter === "groups"}
-            onPress={handleFilterChange}
-          />
-          <FilterButton 
-            label="Archived" 
-            filter="archived" 
-            icon="archive" 
-            active={activeFilter === "archived"}
             onPress={handleFilterChange}
           />
         </ScrollView>
@@ -1308,7 +1215,20 @@ export default function ChatListScreen() {
       {isSelectionMode && selectedConversations.size > 0 && (
         <TouchableOpacity
           style={[styles.fab, styles.deleteFab]}
-          onPress={handleBulkDelete}
+          onPress={() => {
+            Alert.alert(
+              `Delete ${selectedConversations.size} Conversation${selectedConversations.size > 1 ? 's' : ''}`,
+              "This action cannot be undone. The conversation will be permanently deleted.",
+              [
+                { text: "Cancel", style: "cancel" },
+                { 
+                  text: "Delete", 
+                  style: "destructive",
+                  onPress: performBulkDelete
+                }
+              ]
+            );
+          }}
           activeOpacity={0.8}
         >
           <MaterialCommunityIcons name="delete" size={24} color="#FFFFFF" />
@@ -1518,10 +1438,6 @@ const styles = StyleSheet.create({
     borderLeftColor: "#2F6F61",
     backgroundColor: "#F8FFFD",
   },
-  archivedCard: {
-    opacity: 0.7,
-    backgroundColor: "#F8F9FA",
-  },
   selectionCheckbox: {
     marginRight: 12,
   },
@@ -1566,7 +1482,6 @@ const styles = StyleSheet.create({
     borderRadius: 7,
     backgroundColor: '#4CAF50',
   },
-  // 🔧 FIX #1: Updated unread badge styles
   unreadBadge: {
     position: "absolute",
     top: -4,
@@ -1585,19 +1500,6 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 10,
     fontWeight: "700",
-  },
-  archivedBadge: {
-    position: "absolute",
-    bottom: -2,
-    left: -2,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: "#8E8E93",
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: "#FFFFFF",
   },
   content: {
     flex: 1,
@@ -1647,9 +1549,6 @@ const styles = StyleSheet.create({
     color: "#8E8E93",
     flex: 1,
     marginRight: 8,
-  },
-  archivedText: {
-    color: "#8E8E93",
   },
   typingMessageText: {
     color: '#2F6F61',
@@ -1710,7 +1609,7 @@ const styles = StyleSheet.create({
   },
   swipeActions: {
     flexDirection: "row",
-    width: 160,
+    width: 80,
     height: "85%",
     marginVertical: 8,
     borderRadius: 20,
@@ -1724,9 +1623,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 10,
-  },
-  archiveAction: {
-    backgroundColor: "#FF9500",
   },
   deleteAction: {
     backgroundColor: "#FF3B30",
