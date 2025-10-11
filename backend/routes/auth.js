@@ -179,4 +179,27 @@ router.get('/profile', authMiddleware, async (req, res) => {
   }
 });
 
+//correct update user field no one plase change it
+// Update user details
+router.put("/:uid", async (req, res) => {
+  try {
+    const { uid } = req.params;
+    const updateData = req.body;
+
+    console.log("Update request for UID:", uid, "with data:", updateData);
+
+    const user = await User.findOneAndUpdate(
+      { firebaseUid: uid },
+      updateData,
+      { new: true }
+    );
+
+    if (!user) return res.status(404).json({ message: "User not found" });
+    res.json(user);
+  } catch (err) {
+    console.error("Update error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 export default router;
