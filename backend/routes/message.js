@@ -1,4 +1,4 @@
-// backend/routes/message.js - FIXED VERSION
+// backend/routes/message.js - SIMPLE CHAT VERSION (One conversation per user pair)
 import { Router } from 'express';
 import Message from '../models/message.js';
 import Conversation from '../models/Conversation.js';
@@ -48,67 +48,170 @@ router.get('/conversations', authMiddleware, async (req, res) => {
   }
 });
 
-// 🔧 FIX #9: Permanent conversation deletion with better error handling
+// 🔥 NEW: Simple chat - One conversation per user pair (ignores productId)
+router.post('/conversations/start', authMiddleware, async (req, res) => {
+  try {
+    const { receiverId, productId } = req.body;
+
+    console.log('🔍 Starting conversation:', {
+      senderId: req.userId.toString(),
+      receiverId: receiverId.toString(),
+      productId: productId?.toString()
+    });
+
+    if (!receiverId) {
+      return res.status(400).json({ error: 'receiverId is required' });
+    }
+
+    // Prevent self-conversation
+    if (req.userId.toString() === receiverId.toString()) {
+      return res.status(400).json({ error: 'Cannot start conversation with yourself' });
+    }
+
+    // 🔥 FIX: Find conversation by participants ONLY (ignore productId)
+    const participantIds = [req.userId.toString(), receiverId.toString()].sort();
+
+    let conversation = await Conversation.findOne({
+      participants: { $all: participantIds }
+    });
+
+    console.log('🔍 Existing conversation found:', conversation ? conversation._id : 'None');
+
+    if (conversation) {
+      // Update productId if clicking from a new product
+      if (productId && (!conversation.productId || conversation.productId.toString() !== productId.toString())) {
+        conversation.productId = productId;
+        await conversation.save();
+        console.log('✅ Updated conversation product to:', productId);
+      }
+
+      // Return existing conversation
+      await conversation.populate('participants', 'username profilePictureUrl');
+      await conversation.populate('productId', 'title imagesUrls price');
+
+      const otherUser = conversation.participants.find(p => 
+        p._id.toString() !== req.userId.toString()
+      );
+
+      console.log('✅ Returning existing conversation:', conversation._id);
+
+      return res.status(200).json({ 
+        conversation: {
+          _id: conversation._id,
+          otherUser: {
+            _id: otherUser._id,
+            username: otherUser.username,
+            profilePictureUrl: otherUser.profilePictureUrl
+          },
+          product: conversation.productId,
+          lastMessage: conversation.lastMessage,
+          unreadCount: conversation.unreadCount.get(req.userId.toString()) || 0
+        }
+      });
+    }
+
+    // Create new conversation
+    conversation = await Conversation.create({
+      participants: participantIds,
+      productId: productId || null, // Optional: store initial product
+      unreadCount: {
+        [req.userId.toString()]: 0,
+        [receiverId.toString()]: 0
+      }
+    });
+
+    console.log('✅ Created new conversation:', conversation._id);
+
+    await conversation.populate('participants', 'username profilePictureUrl');
+    if (conversation.productId) {
+      await conversation.populate('productId', 'title imagesUrls price');
+    }
+
+    const otherUser = conversation.participants.find(p => 
+      p._id.toString() !== req.userId.toString()
+    );
+
+    res.status(201).json({ 
+      conversation: {
+        _id: conversation._id,
+        otherUser: {
+          _id: otherUser._id,
+          username: otherUser.username,
+          profilePictureUrl: otherUser.profilePictureUrl
+        },
+        product: conversation.productId,
+        lastMessage: conversation.lastMessage,
+        unreadCount: conversation.unreadCount.get(req.userId.toString()) || 0
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error starting conversation:', error);
+    res.status(500).json({ error: 'Failed to start conversation' });
+  }
+});
+
+// Bulk delete conversations
 router.delete('/conversations/bulk-delete', authMiddleware, async (req, res) => {
   try {
     const { conversationIds } = req.body;
 
-    console.log('🗑️ Delete request:', { conversationIds, userId: req.userId });
+    console.log('🗑️ Bulk delete request:', { 
+      conversationIds, 
+      userId: req.userId.toString(),
+      count: conversationIds?.length 
+    });
 
     if (!conversationIds || !Array.isArray(conversationIds) || conversationIds.length === 0) {
       return res.status(400).json({ error: 'conversationIds array is required' });
     }
 
-    // Verify user has access to these conversations
     const conversations = await Conversation.find({
       _id: { $in: conversationIds },
       participants: req.userId
     });
 
-    console.log('🗑️ Found conversations to delete:', conversations.length);
+    console.log('🔍 Found conversations:', conversations.length);
 
     if (conversations.length === 0) {
       return res.status(404).json({ error: 'No conversations found' });
     }
 
-    if (conversations.length !== conversationIds.length) {
-      console.warn('⚠️ Some conversations not found or access denied');
-    }
-
     const validConversationIds = conversations.map(c => c._id);
 
-    // Delete all messages for these conversations
+    let totalMessagesDeleted = 0;
     for (const conversation of conversations) {
+      const otherParticipantId = conversation.participants.find(
+        p => p.toString() !== req.userId.toString()
+      );
+
       const deleteMessagesResult = await Message.deleteMany({
         $or: [
-          { 
-            senderId: req.userId, 
-            receiverId: { $in: conversation.participants.filter(p => p.toString() !== req.userId.toString()) }
-          },
-          { 
-            senderId: { $in: conversation.participants.filter(p => p.toString() !== req.userId.toString()) },
-            receiverId: req.userId 
-          }
+          { senderId: req.userId, receiverId: otherParticipantId },
+          { senderId: otherParticipantId, receiverId: req.userId }
         ]
       });
 
-      console.log(`🗑️ Deleted ${deleteMessagesResult.deletedCount} messages from conversation ${conversation._id}`);
+      totalMessagesDeleted += deleteMessagesResult.deletedCount;
     }
 
-    // PERMANENTLY delete conversations from DB
     const deleteResult = await Conversation.deleteMany({
       _id: { $in: validConversationIds }
     });
 
-    console.log('✅ Delete result:', deleteResult);
+    console.log('✅ Delete completed:', {
+      conversationsDeleted: deleteResult.deletedCount,
+      messagesDeleted: totalMessagesDeleted
+    });
 
     res.json({ 
+      success: true,
       message: 'Conversations deleted permanently',
       deletedCount: deleteResult.deletedCount,
-      success: true
+      messagesDeleted: totalMessagesDeleted
     });
+
   } catch (error) {
-    console.error('❌ Error bulk deleting conversations:', error);
+    console.error('❌ Error bulk deleting:', error);
     res.status(500).json({ 
       error: 'Failed to delete conversations',
       details: error.message
@@ -116,7 +219,7 @@ router.delete('/conversations/bulk-delete', authMiddleware, async (req, res) => 
   }
 });
 
-// Delete a single conversation
+// Delete single conversation
 router.delete('/conversations/:conversationId', authMiddleware, async (req, res) => {
   try {
     const { conversationId } = req.params;
@@ -130,25 +233,31 @@ router.delete('/conversations/:conversationId', authMiddleware, async (req, res)
       return res.status(404).json({ error: 'Conversation not found' });
     }
 
-    // Delete all messages in the conversation
-    await Message.deleteMany({
+    const otherParticipantId = conversation.participants.find(
+      p => p.toString() !== req.userId.toString()
+    );
+
+    const deleteMessagesResult = await Message.deleteMany({
       $or: [
-        { senderId: req.userId, receiverId: { $in: conversation.participants } },
-        { senderId: { $in: conversation.participants }, receiverId: req.userId }
+        { senderId: req.userId, receiverId: otherParticipantId },
+        { senderId: otherParticipantId, receiverId: req.userId }
       ]
     });
 
-    // PERMANENTLY delete the conversation from DB
     await Conversation.findByIdAndDelete(conversationId);
 
-    res.json({ message: 'Conversation deleted permanently', success: true });
+    res.json({ 
+      success: true,
+      message: 'Conversation deleted permanently',
+      messagesDeleted: deleteMessagesResult.deletedCount
+    });
   } catch (error) {
-    console.error('Error deleting conversation:', error);
+    console.error('❌ Error deleting conversation:', error);
     res.status(500).json({ error: 'Failed to delete conversation' });
   }
 });
 
-// Send a message with reply support
+// Send a message
 router.post('/send', authMiddleware, async (req, res) => {
   try {
     const { 
@@ -171,16 +280,9 @@ router.post('/send', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'Content is required for text messages' });
     }
 
-    if (messageType === 'image' && !imageUrl) {
-      return res.status(400).json({ error: 'imageUrl is required for image messages' });
-    }
-
     let replyToMessage = null;
     if (replyTo) {
       replyToMessage = await Message.findById(replyTo).populate('senderId', 'username');
-      if (!replyToMessage) {
-        return res.status(404).json({ error: 'Message to reply to not found' });
-      }
     }
 
     const messageData = {
@@ -232,7 +334,7 @@ router.post('/send', authMiddleware, async (req, res) => {
   }
 });
 
-// Upload image for message
+// Upload image
 router.post('/upload-image', authMiddleware, async (req, res) => {
   try {
     const { image } = req.body;
@@ -322,61 +424,7 @@ router.put('/conversations/:conversationId/mark-read', authMiddleware, async (re
   }
 });
 
-// 🔧 FIX #1: Start a conversation - Fixed duplicate conversations
-router.post('/conversations/start', authMiddleware, async (req, res) => {
-  try {
-    const { receiverId, productId } = req.body;
-
-    if (!receiverId || !productId) {
-      return res.status(400).json({ error: 'receiverId and productId are required' });
-    }
-
-    // 🔧 FIX: Check for existing conversation regardless of participant order
-    let conversation = await Conversation.findOne({
-      $or: [
-        { participants: [req.userId, receiverId], productId: productId },
-        { participants: [receiverId, req.userId], productId: productId }
-      ]
-    });
-
-    if (!conversation) {
-      conversation = await Conversation.create({
-        participants: [req.userId, receiverId],
-        productId: productId,
-        unreadCount: {
-          [req.userId.toString()]: 0,
-          [receiverId.toString()]: 0
-        }
-      });
-    }
-
-    await conversation.populate('participants', 'username profilePictureUrl');
-    await conversation.populate('productId', 'title imagesUrls price');
-
-    const otherUser = conversation.participants.find(p => 
-      p._id.toString() !== req.userId.toString()
-    );
-
-    res.status(201).json({ 
-      conversation: {
-        _id: conversation._id,
-        otherUser: {
-          _id: otherUser._id,
-          username: otherUser.username,
-          profilePictureUrl: otherUser.profilePictureUrl
-        },
-        product: conversation.productId,
-        lastMessage: conversation.lastMessage,
-        unreadCount: conversation.unreadCount.get(req.userId.toString()) || 0
-      }
-    });
-  } catch (error) {
-    console.error('Error starting conversation:', error);
-    res.status(500).json({ error: 'Failed to start conversation' });
-  }
-});
-
-// Delete a specific message
+// Delete a message
 router.delete('/:messageId', authMiddleware, async (req, res) => {
   try {
     const { messageId } = req.params;
@@ -393,37 +441,6 @@ router.delete('/:messageId', authMiddleware, async (req, res) => {
 
     await Message.findByIdAndDelete(messageId);
 
-    const conversations = await Conversation.find({
-      participants: req.userId
-    });
-
-    for (const conversation of conversations) {
-      if (conversation.lastMessage && conversation.lastMessage.messageId === messageId) {
-        const lastMessage = await Message.findOne({
-          $or: [
-            { senderId: req.userId, receiverId: { $in: conversation.participants } },
-            { senderId: { $in: conversation.participants }, receiverId: req.userId }
-          ]
-        }).sort({ sentDate: -1 });
-
-        if (lastMessage) {
-          await Conversation.findByIdAndUpdate(conversation._id, {
-            lastMessage: {
-              content: lastMessage.content || `${lastMessage.messageType} message`,
-              senderId: lastMessage.senderId,
-              messageType: lastMessage.messageType,
-              sentDate: lastMessage.sentDate,
-              messageId: lastMessage._id
-            }
-          });
-        } else {
-          await Conversation.findByIdAndUpdate(conversation._id, {
-            lastMessage: null
-          });
-        }
-      }
-    }
-
     res.json({ message: 'Message deleted successfully' });
   } catch (error) {
     console.error('Error deleting message:', error);
@@ -431,7 +448,7 @@ router.delete('/:messageId', authMiddleware, async (req, res) => {
   }
 });
 
-// Get product details for chat
+// Get product details
 router.get('/product/:productId', authMiddleware, async (req, res) => {
   try {
     const { productId } = req.params;
