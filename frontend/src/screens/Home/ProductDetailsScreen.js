@@ -459,7 +459,7 @@ export default function ProductDetailsScreen() {
             <View style={styles.ownerActions}>
               <TouchableOpacity
                 style={styles.editBtn}
-                onPress={() => Alert.alert("Edit Product", "Edit functionality can be implemented here")}
+                onPress={() => Alert.alert("Edit Product", "You can't Edit your product Now")}
               >
                 <MaterialCommunityIcons name="pencil" size={18} color="#fff" />
                 <Text style={styles.editBtnText}>Edit Product</Text>
