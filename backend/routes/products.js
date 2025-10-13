@@ -402,9 +402,13 @@ router.get("/buy-requests", async (req, res) => {
     const { categoryId, all } = req.query;
 
     let filter = {};
-    if (!all) {
-      filter.status = "available"; // default: only available products
-    }
+   if (!all) {
+  filter.$or = [
+    { status: "available" },
+    { "buyRequests.status": "accepted" }, // include sold ones with accepted requests
+  ];
+}
+
 
     if (categoryId) filter.categoryId = categoryId;
 
