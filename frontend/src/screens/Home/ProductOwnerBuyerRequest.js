@@ -4,13 +4,26 @@ import { View, Text, TouchableOpacity, Image, StyleSheet } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import axios from "axios";
 import { API_URL } from "../../constants/config";
+import { Ionicons } from "@expo/vector-icons";
 
 const theme = {
   primary: "#2F6F61",
+  primaryLight: "#E8F5F2",
   accent: "#FF6F61",
+  accentLight: "#FFEFED",
   danger: "#D32F2F",
-  border: "#E5E7EB",
-  muted: "#6C757D",
+  dangerLight: "#FBEAEA",
+  success: "#10B981",
+  successLight: "#ECFDF5",
+  warning: "#F59E0B",
+  warningLight: "#FFFBEB",
+  background: "#F8FAFC",
+  card: "#FFFFFF",
+  textPrimary: "#1E293B",
+  textSecondary: "#64748B",
+  textMuted: "#94A3B8",
+  border: "#E2E8F0",
+  borderLight: "#F1F5F9",
 };
 
 export default function ProductOwnerBuyerRequest({ requests, user, onRefresh }) {
@@ -49,7 +62,7 @@ export default function ProductOwnerBuyerRequest({ requests, user, onRefresh }) 
     }
   };
 
-  // Current user’s identifiers
+  // Current user's identifiers
   const currentUserDbId = user.dbId; // From backend (Mongo _id)
   const currentUserUid = user.uid;   // Firebase UID
 
@@ -62,137 +75,347 @@ export default function ProductOwnerBuyerRequest({ requests, user, onRefresh }) 
     r => r.sellerId === currentUserDbId || r.sellerId === currentUserUid
   );
 
+  const getStatusConfig = (status) => {
+    switch (status) {
+      case "pending": return { color: theme.warning, bg: theme.warningLight, icon: "time-outline" };
+      case "accepted": return { color: theme.success, bg: theme.successLight, icon: "checkmark-circle-outline" };
+      case "rejected": return { color: theme.danger, bg: theme.dangerLight, icon: "close-circle-outline" };
+      case "cancelled": return { color: theme.textMuted, bg: theme.borderLight, icon: "ban-outline" };
+      default: return { color: theme.textMuted, bg: theme.borderLight, icon: "help-circle-outline" };
+    }
+  };
+
   // Render card for each request
-  const renderRequestCard = (req, type) => (
-    <View key={req._id} style={styles.card}>
-      <Text style={styles.subTitle}>
-        {type === "sent" ? "You Sent a Buy Request" : "Buy Request Received"}
-      </Text>
-
-      <TouchableOpacity
-        onPress={() => navigation.navigate("ProductDetails", { product: req.product })}
-      >
-        {req.product.imagesUrls?.[0] ? (
-          <Image source={{ uri: req.product.imagesUrls[0] }} style={styles.cardImage} />
-        ) : (
-          <View style={[styles.cardImage, { backgroundColor: theme.border }]} />
-        )}
-        <Text style={styles.productTitle}>{req.product.title}</Text>
-      </TouchableOpacity>
-
-      {/* ✅ Show seller and buyer info */}
-      <Text style={styles.infoText}>
-        Seller: {req.sellerName} ({req.sellerContact})
-      </Text>
-      <Text style={styles.infoText}>
-        Buyer: {req.buyerName} ({req.buyerContact})
-      </Text>
-
-      <Text style={styles.statusText}>Status: {req.status}</Text>
-
-      {/* Cancel button for sent requests */}
-      {type === "sent" && req.status === "pending" && (
-        <TouchableOpacity
-          style={[styles.ownerBadge, { backgroundColor: theme.danger }]}
-          onPress={() => cancelBuy(req)}
-        >
-          <Text style={styles.ownerBadgeText}>Cancel Request</Text>
-        </TouchableOpacity>
-      )}
-
-      {/* Accept/Reject buttons for received requests */}
-      {type === "received" && req.status === "pending" && (
-        <View style={styles.actions}>
-          <TouchableOpacity
-            style={[styles.actionBtn, styles.acceptBtn]}
-            onPress={() => respondBuy(req, "accepted")}
-          >
-            <Text style={styles.ownerBadgeText}>Accept</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.actionBtn, styles.rejectBtn]}
-            onPress={() => respondBuy(req, "rejected")}
-          >
-            <Text style={styles.ownerBadgeText}>Reject</Text>
-          </TouchableOpacity>
+  const renderRequestCard = (req, type) => {
+    const statusConfig = getStatusConfig(req.status);
+    
+    return (
+      <View key={req._id} style={styles.card}>
+        {/* Card Header */}
+        <View style={styles.cardHeader}>
+          <View style={styles.requestTypeBadge}>
+            <Ionicons 
+              name={type === "sent" ? "arrow-up-outline" : "arrow-down-outline"} 
+              size={14} 
+              color={type === "sent" ? theme.primary : theme.accent} 
+            />
+            <Text style={[styles.requestTypeText, { color: type === "sent" ? theme.primary : theme.accent }]}>
+              {type === "sent" ? "Request Sent" : "Request Received"}
+            </Text>
+          </View>
+          <View style={[styles.statusBadge, { backgroundColor: statusConfig.bg }]}>
+            <Ionicons name={statusConfig.icon} size={12} color={statusConfig.color} />
+            <Text style={[styles.statusText, { color: statusConfig.color }]}>
+              {req.status.charAt(0).toUpperCase() + req.status.slice(1)}
+            </Text>
+          </View>
         </View>
-      )}
-    </View>
-  );
+
+        {/* Product Info */}
+        <TouchableOpacity
+          style={styles.productSection}
+          onPress={() => navigation.navigate("ProductDetails", { product: req.product })}
+        >
+          {req.product.imagesUrls?.[0] ? (
+            <Image source={{ uri: req.product.imagesUrls[0] }} style={styles.productImage} />
+          ) : (
+            <View style={styles.productImagePlaceholder}>
+              <Ionicons name="image-outline" size={24} color={theme.textMuted} />
+            </View>
+          )}
+          <View style={styles.productInfo}>
+            <Text style={styles.productTitle} numberOfLines={2}>{req.product.title}</Text>
+            <Text style={styles.productPrice}>LKR {req.product.price?.toLocaleString() || "N/A"}</Text>
+            <View style={styles.productCondition}>
+              <Ionicons name="hammer-outline" size={12} color={theme.textSecondary} />
+              <Text style={styles.conditionText}>{req.product.condition || "N/A"}</Text>
+            </View>
+          </View>
+        </TouchableOpacity>
+
+        {/* Contact Information */}
+        <View style={styles.contactSection}>
+          <View style={styles.contactRow}>
+            <Ionicons name="person-outline" size={14} color={theme.textSecondary} />
+            <Text style={styles.contactLabel}>
+              {type === "sent" ? "Seller" : "Buyer"}:
+            </Text>
+            <Text style={styles.contactValue}>
+              {type === "sent" ? req.sellerName : req.buyerName}
+            </Text>
+          </View>
+          <View style={styles.contactRow}>
+            <Ionicons name="call-outline" size={14} color={theme.textSecondary} />
+            <Text style={styles.contactLabel}>Contact:</Text>
+            <Text style={styles.contactValue}>
+              {type === "sent" ? req.sellerContact : req.buyerContact}
+            </Text>
+          </View>
+        </View>
+
+        {/* Action Buttons */}
+        {type === "sent" && req.status === "pending" && (
+          <TouchableOpacity
+            style={styles.cancelButton}
+            onPress={() => cancelBuy(req)}
+          >
+            <Ionicons name="close-circle" size={16} color={theme.danger} />
+            <Text style={styles.cancelButtonText}>Cancel Buy Request</Text>
+          </TouchableOpacity>
+        )}
+
+        {type === "received" && req.status === "pending" && (
+          <View style={styles.actionButtons}>
+            <TouchableOpacity
+              style={[styles.actionButton, styles.acceptButton]}
+              onPress={() => respondBuy(req, "accepted")}
+            >
+              <Ionicons name="checkmark" size={16} color="#fff" />
+              <Text style={styles.actionButtonText}>Accept</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.actionButton, styles.rejectButton]}
+              onPress={() => respondBuy(req, "rejected")}
+            >
+              <Ionicons name="close" size={16} color="#fff" />
+              <Text style={styles.actionButtonText}>Reject</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
+    );
+  };
 
   return (
-    <View style={{ marginHorizontal: 16 }}>
-      {/* Sent Requests */}
-      <Text style={styles.sectionTitle}>Buy Requests You Sent</Text>
-      {sentRequests.length === 0 ? (
-        <Text style={styles.emptyText}>No buy requests sent</Text>
-      ) : (
-        sentRequests.map(req => renderRequestCard(req, "sent"))
-      )}
+    <View style={styles.container}>
+      {/* Sent Requests Section */}
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Ionicons name="arrow-up-circle" size={20} color={theme.primary} />
+          <Text style={styles.sectionTitle}>Buy Requests You Sent</Text>
+        </View>
+        {sentRequests.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Ionicons name="file-tray-outline" size={48} color={theme.border} />
+            <Text style={styles.emptyText}>No buy requests sent</Text>
+            <Text style={styles.emptySubtext}>
+              When you send buy requests, they'll appear here
+            </Text>
+          </View>
+        ) : (
+          sentRequests.map(req => renderRequestCard(req, "sent"))
+        )}
+      </View>
 
-      {/* Received Requests */}
-      <Text style={styles.sectionTitle}>Buy Requests Received</Text>
-      {receivedRequests.length === 0 ? (
-        <Text style={styles.emptyText}>No buy requests received</Text>
-      ) : (
-        receivedRequests.map(req => renderRequestCard(req, "received"))
-      )}
+      {/* Received Requests Section */}
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Ionicons name="arrow-down-circle" size={20} color={theme.accent} />
+          <Text style={styles.sectionTitle}>Buy Requests Received</Text>
+        </View>
+        {receivedRequests.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Ionicons name="file-tray-outline" size={48} color={theme.border} />
+            <Text style={styles.emptyText}>No buy requests received</Text>
+            <Text style={styles.emptySubtext}>
+              Buy requests from other users will appear here
+            </Text>
+          </View>
+        ) : (
+          receivedRequests.map(req => renderRequestCard(req, "received"))
+        )}
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  container: {
+    paddingHorizontal: 20,
+  },
+  section: {
+    marginBottom: 24,
+  },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 16,
+  },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    marginBottom: 6,
-    color: "#2F6F61",
+    fontSize: 18,
+    fontWeight: "600",
+    color: theme.textPrimary,
+    marginLeft: 8,
+  },
+  emptyState: {
+    alignItems: "center",
+    paddingVertical: 40,
+    backgroundColor: theme.card,
+    borderRadius: 16,
+    paddingHorizontal: 20,
   },
   emptyText: {
     textAlign: "center",
-    color: theme.muted,
-    marginBottom: 12,
+    color: theme.textMuted,
+    fontSize: 16,
+    marginTop: 12,
+    fontWeight: "500",
+  },
+  emptySubtext: {
+    textAlign: "center",
+    color: theme.textMuted,
     fontSize: 14,
-    fontStyle: "italic",
+    marginTop: 4,
   },
   card: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    marginBottom: 15,
-    padding: 12,
+    backgroundColor: theme.card,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
     elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
-  cardImage: {
-    width: "100%",
-    height: 140,
+  cardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  requestTypeBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     borderRadius: 8,
-    marginBottom: 10,
+    backgroundColor: theme.borderLight,
+  },
+  requestTypeText: {
+    fontSize: 12,
+    fontWeight: "600",
+    marginLeft: 4,
+  },
+  statusBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  statusText: {
+    fontSize: 12,
+    fontWeight: "600",
+    marginLeft: 4,
+  },
+  productSection: {
+    flexDirection: "row",
+    backgroundColor: theme.background,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+  },
+  productImage: {
+    width: 60,
+    height: 60,
+    borderRadius: 8,
+  },
+  productImagePlaceholder: {
+    width: 60,
+    height: 60,
+    borderRadius: 8,
+    backgroundColor: theme.borderLight,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  productInfo: {
+    flex: 1,
+    marginLeft: 12,
+    justifyContent: "space-between",
   },
   productTitle: {
+    fontSize: 16,
     fontWeight: "600",
-    fontSize: 15,
+    color: theme.textPrimary,
+    marginBottom: 4,
+  },
+  productPrice: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: theme.accent,
+    marginBottom: 4,
+  },
+  productCondition: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  conditionText: {
+    fontSize: 12,
+    color: theme.textSecondary,
+    marginLeft: 4,
+  },
+  contactSection: {
+    backgroundColor: theme.background,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+  },
+  contactRow: {
+    flexDirection: "row",
+    alignItems: "center",
     marginBottom: 6,
   },
-  subTitle: { fontWeight: "600", marginBottom: 4 },
-  infoText: { fontSize: 13, color: "#333", marginTop: 2 },
-  statusText: { marginTop: 6, fontSize: 12, color: theme.muted },
-  ownerBadge: {
-    marginTop: 8,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 20,
-    alignItems: "center",
-    alignSelf: "flex-start",
+  contactLabel: {
+    fontSize: 12,
+    fontWeight: "500",
+    color: theme.textSecondary,
+    marginLeft: 6,
+    marginRight: 4,
+    width: 60,
   },
-  ownerBadgeText: { color: "#fff", fontWeight: "bold", fontSize: 12 },
-  actions: { flexDirection: "row", marginTop: 8 },
-  actionBtn: {
+  contactValue: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: theme.textPrimary,
     flex: 1,
-    paddingVertical: 8,
-    borderRadius: 20,
-    alignItems: "center",
-    marginRight: 8,
   },
-  acceptBtn: { backgroundColor: theme.primary },
-  rejectBtn: { backgroundColor: theme.danger },
+  cancelButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: theme.dangerLight,
+    gap: 8,
+  },
+  cancelButtonText: {
+    color: theme.danger,
+    fontWeight: "600",
+    fontSize: 14,
+  },
+  actionButtons: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  actionButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    borderRadius: 12,
+    gap: 6,
+  },
+  acceptButton: {
+    backgroundColor: theme.success,
+  },
+  rejectButton: {
+    backgroundColor: theme.danger,
+  },
+  actionButtonText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: 14,
+  },
 });

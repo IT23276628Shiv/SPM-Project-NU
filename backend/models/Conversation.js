@@ -1,4 +1,4 @@
-// backend/models/Conversation.js
+// backend/models/Conversation.js - SIMPLE CHAT VERSION
 import mongoose from 'mongoose';
 
 const conversationSchema = new mongoose.Schema(
@@ -10,8 +10,9 @@ const conversationSchema = new mongoose.Schema(
     }],
     productId: { 
       type: mongoose.Schema.Types.ObjectId, 
-      ref: 'Product' 
-    }, // The product this conversation is about
+      ref: 'Product',
+      // Optional: stores the most recent product discussed
+    },
     lastMessage: {
       content: { type: String },
       senderId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
@@ -28,7 +29,17 @@ const conversationSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Ensure participants array has exactly 2 users
-conversationSchema.index({ participants: 1, productId: 1 });
+// 🔥 SIMPLE: One conversation per user pair (unique participants only)
+conversationSchema.index(
+  { participants: 1 }, 
+  { 
+    unique: true,
+    name: 'unique_participants_conversation'
+  }
+);
+
+// Additional indexes for performance
+conversationSchema.index({ updatedAt: -1 });
+conversationSchema.index({ productId: 1 });
 
 export default mongoose.model('Conversation', conversationSchema);

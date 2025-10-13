@@ -63,8 +63,8 @@ export default function Sidebar({ sidebarAnim, onClose }) {
         <View style={styles.userInfo}>
           <Image
             source={
-              user?.profile
-                ? { uri: user.profile }
+              userDetails?.profilePictureUrl
+                ? { uri: userDetails.profilePictureUrl }
                 : require("../../assets/Profile.png")
             }
             style={styles.profileImage}
