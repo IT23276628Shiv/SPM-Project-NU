@@ -163,6 +163,7 @@ export default function AddProductScreen({ navigation }) {
       !condition ||
       !address ||
       !district ||
+      !price || 
       images.length === 0
     ) {
       Alert.alert("Missing Information", "Please fill all required fields and add at least 1 image");
@@ -628,14 +629,15 @@ export default function AddProductScreen({ navigation }) {
         {/* Price & Swap */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Pricing</Text>
+            <Text style={styles.sectionTitle}>Price (LKR)</Text>
+            <Text style={styles.requiredBadge}>Required</Text>
           </View>
           
           <View style={styles.inputGroup}>
-            <View style={styles.labelContainer}>
+            {/* <View style={styles.labelContainer}>
               <Text style={styles.label}>Price (LKR)</Text>
-              <Text style={styles.optionalText}>(Optional)</Text>
-            </View>
+              
+            </View> */}
             <View style={styles.priceInputContainer}>
               <Text style={styles.currencySymbol}>Rs.</Text>
               <TextInput

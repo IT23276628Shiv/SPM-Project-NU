@@ -151,6 +151,39 @@ export default function ProductOwnerBuyerRequest({ requests, user, onRefresh }) 
               {type === "sent" ? req.sellerContact : req.buyerContact}
             </Text>
           </View>
+          {/* Show Buy Product details if request accepted */}
+          {/* {type === "sent" && req.status === "accepted" && req.product && (
+            <View style={styles.buyProductSection}>
+              <View style={styles.buyProductHeader}>
+                <Ionicons name="cart-outline" size={16} color={theme.primary} />
+                <Text style={styles.buyProductTitle}>Buy Product Details</Text>
+              </View>
+              <View style={styles.buyProductContent}>
+                {req.product.imagesUrls?.[0] ? (
+                  <Image
+                    source={{ uri: req.product.imagesUrls[0] }}
+                    style={styles.buyProductImage}
+                  />
+                ) : (
+                  <View style={styles.productImagePlaceholder}>
+                    <Ionicons name="image-outline" size={24} color={theme.textMuted} />
+                  </View>
+                )}
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={styles.buyProductName} numberOfLines={2}>
+                    {req.product.title}
+                  </Text>
+                  <Text style={styles.buyProductPrice}>
+                    LKR {req.product.price?.toLocaleString() || "N/A"}
+                  </Text>
+                  <Text style={styles.buyProductCondition}>
+                    Condition: {req.product.condition || "N/A"}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          )} */}
+
         </View>
 
         {/* Action Buttons */}
@@ -182,6 +215,7 @@ export default function ProductOwnerBuyerRequest({ requests, user, onRefresh }) 
             </TouchableOpacity>
           </View>
         )}
+        
       </View>
     );
   };
@@ -418,4 +452,48 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     fontSize: 14,
   },
+
+  buyProductSection: {
+    backgroundColor: theme.background,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+  },
+  buyProductHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  buyProductTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: theme.textPrimary,
+    marginLeft: 6,
+  },
+  buyProductContent: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  buyProductImage: {
+    width: 60,
+    height: 60,
+    borderRadius: 8,
+  },
+  buyProductName: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: theme.textPrimary,
+    marginBottom: 4,
+  },
+  buyProductPrice: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: theme.accent,
+    marginBottom: 4,
+  },
+  buyProductCondition: {
+    fontSize: 12,
+    color: theme.textSecondary,
+  },
+
 });

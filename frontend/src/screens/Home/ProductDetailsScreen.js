@@ -227,6 +227,22 @@ export default function ProductDetailsScreen() {
   const isOwner = product?.ownerId?.firebaseUid === user?.uid;
   const canEditOrBuySwap = product.status === "available";
 
+  // Get status badge color based on status
+  const getStatusColor = (status) => {
+    switch (status?.toLowerCase()) {
+      case 'available':
+        return theme.success;
+      case 'sold':
+        return theme.accent;
+      case 'pending':
+        return theme.warning;
+      case 'reserved':
+        return theme.primary;
+      default:
+        return theme.muted;
+    }
+  };
+
   return (
     <View style={styles.container}>
       <ScrollView 
@@ -271,12 +287,19 @@ export default function ProductDetailsScreen() {
         <View style={styles.section}>
           <View style={styles.priceRow}>
             <Text style={styles.price}>LKR {formatPrice(product.price)}</Text>
-            {product.isForSwap && (
-              <View style={styles.swapTag}>
-                <MaterialCommunityIcons name="swap-horizontal" size={14} color="#fff" />
-                <Text style={styles.swapTagText}>Swap Available</Text>
+            <View style={styles.statusBadgeContainer}>
+              <View style={[styles.statusBadge, { backgroundColor: getStatusColor(product.status) }]}>
+                <Text style={styles.statusBadgeText}>
+                  {product.status?.toUpperCase() || 'UNKNOWN'}
+                </Text>
               </View>
-            )}
+              {product.isForSwap && (
+                <View style={styles.swapTag}>
+                  <MaterialCommunityIcons name="swap-horizontal" size={14} color="#fff" />
+                  <Text style={styles.swapTagText}>Swap Available</Text>
+                </View>
+              )}
+            </View>
           </View>
           
           <Text style={styles.title}>{product.title}</Text>
@@ -448,8 +471,8 @@ export default function ProductDetailsScreen() {
           </View>
         )}
 
-        {/* Owner Section */}
-        {isOwner && (
+        {/* Owner Section - Only show edit/delete buttons when status is "available" */}
+        {isOwner && product.status === "available" && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <MaterialCommunityIcons name="shield-account" size={20} color={theme.primary} />
@@ -502,6 +525,31 @@ export default function ProductDetailsScreen() {
                 <MaterialCommunityIcons name="delete-outline" size={18} color="#fff" />
                 <Text style={styles.deleteBtnText}>Delete</Text>
               </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {/* Owner Info for non-available products */}
+        {isOwner && product.status !== "available" && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <MaterialCommunityIcons name="information-outline" size={20} color={theme.primary} />
+              <Text style={styles.sectionTitle}>Product Status</Text>
+            </View>
+            <View style={styles.statusMessage}>
+              <MaterialCommunityIcons 
+                name={
+                  product.status === "sold" ? "check-circle" : 
+                  product.status === "pending" ? "clock" : "alert-circle"
+                } 
+                size={24} 
+                color={getStatusColor(product.status)} 
+              />
+              <Text style={styles.statusMessageText}>
+                This product is currently <Text style={{ fontWeight: 'bold' }}>{product.status}</Text>. 
+                {product.status === "sold" && " It can no longer be edited or deleted."}
+                {product.status === "pending" && " Edit and delete options are disabled while there are pending requests."}
+              </Text>
             </View>
           </View>
         )}
@@ -560,8 +608,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    paddingTop:"10",
-    paddingBottom:"10",
+    paddingTop: 10,
+    paddingBottom: 10,
   },
   image: {
     width: '100%',
@@ -624,13 +672,28 @@ const styles = StyleSheet.create({
   priceRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: 12,
   },
   price: {
     fontSize: 24,
     fontWeight: '700',
     color: theme.accent,
+    flex: 1,
+  },
+  statusBadgeContainer: {
+    alignItems: 'flex-end',
+    gap: 8,
+  },
+  statusBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  statusBadgeText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
   },
   swapTag: {
     flexDirection: 'row',
@@ -846,6 +909,20 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '600',
     fontSize: 14,
+  },
+  statusMessage: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    padding: 12,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+  },
+  statusMessageText: {
+    flex: 1,
+    fontSize: 14,
+    color: theme.textSecondary,
+    lineHeight: 20,
   },
   spacer: {
     height: 20,
