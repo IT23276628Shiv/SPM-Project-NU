@@ -19,6 +19,9 @@ import Layout from "../../components/Layouts";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Dropdown } from "react-native-element-dropdown";
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
+import { useEffect } from "react";
+import FeedbackPopup from "../Feedback/FeedbackPopup";
+
 
 // Location list
 const LOCATIONS = [
@@ -134,8 +137,46 @@ export default function HomeScreen() {
     }
   };
 
+  const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
+
+  // Feedback popup logic
+useEffect(() => {
+  const checkFeedbackStatus = async () => {
+    if (!user) return;
+
+    const currentMonth = new Date().getMonth(); // 0–11
+    const feedbackMonthKey = `feedback_last_submitted_month_${user.uid}`;
+    const skipCountKey = `feedback_skip_count_${user.uid}`;
+
+    const lastSubmittedMonth = await AsyncStorage.getItem(feedbackMonthKey);
+    const skipCount = parseInt(await AsyncStorage.getItem(skipCountKey) || "0");
+
+    // Show feedback popup if:
+    // - user hasn't submitted this month
+    // - and skipped less than 3 times
+    if (parseInt(lastSubmittedMonth) !== currentMonth && skipCount < 3) {
+      setShowFeedbackPopup(true);
+    }
+  };
+
+  checkFeedbackStatus();
+}, [user]);
+const handleFeedbackClose = async () => {
+  if (!user) return;
+  const skipCountKey = `feedback_skip_count_${user.uid}`;
+  const currentCount = parseInt(await AsyncStorage.getItem(skipCountKey) || "0");
+  await AsyncStorage.setItem(skipCountKey, (currentCount + 1).toString());
+  setShowFeedbackPopup(false);
+};
+
+
   return (
     <Layout>
+      <FeedbackPopup 
+        visible={showFeedbackPopup} 
+        onClose={handleFeedbackClose} 
+      />
+
     <ScrollView
         style={{ flex: 1 }}
         refreshControl={
