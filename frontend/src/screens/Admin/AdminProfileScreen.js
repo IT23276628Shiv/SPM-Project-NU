@@ -179,7 +179,7 @@ export default function AdminProfileScreen({ navigation }) {
           
           <View style={styles.profileInfo}>
             <Text style={styles.profileName}>{userDetails?.username || 'Admin User'}</Text>
-            <Text style={styles.profileEmail}>{userDetails?.email || 'admin@revoMart.com'}</Text>
+            <Text style={styles.profileEmail}>{userDetails?.email || 'admin@REVOMART.com'}</Text>
             <View style={[styles.roleBadge, { backgroundColor: getRoleColor(userDetails?.role) + '20' }]}>
               <MaterialCommunityIcons 
                 name="shield-check" 
@@ -321,7 +321,7 @@ export default function AdminProfileScreen({ navigation }) {
             <Text style={styles.systemInfoTitle}>System Information</Text>
           </View>
           <Text style={styles.systemInfoText}>
-            RevoMart Admin Panel v1.0{'\n'}
+            REVOMART Admin Panel v1.0{'\n'}
             Built with React Native & Node.js{'\n'}
             Last updated: {new Date().toLocaleDateString()}
           </Text>

@@ -140,7 +140,7 @@ export default function InfoFormScreen({ route, navigation }) {
       const data = await response.json();
 
       if (response.ok) {
-        Alert.alert("🎉 Welcome to RevoMart!", "Your profile is complete and ready to go!");
+        Alert.alert("🎉 Welcome to REVOMART!", "Your profile is complete and ready to go!");
         navigation.reset({
           index: 0,
           routes: [{ name: 'MainTabs' }],

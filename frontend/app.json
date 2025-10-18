@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "OLX",
-    "slug": "OLX",
+    "name": "REVOMART",
+    "slug": "REVOMART",
     "platforms": [
       "ios",
       "android",
@@ -18,14 +18,16 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.anonymous.REVOMART"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "package": "com.anonymous.REVOMART"
     },
     "web": {
       "favicon": "./assets/favicon.png"

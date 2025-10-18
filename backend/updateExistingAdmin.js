@@ -9,7 +9,7 @@ async function updateExistingAdmin() {
     await mongoose.connect(process.env.MONGO_URI);
     console.log("✅ MongoDB connected");
 
-    const email = "admin@revomart.com";
+    const email = "admin@REVOMART.com";
 
     // Find the existing admin user
     const adminUser = await User.findOne({ email });

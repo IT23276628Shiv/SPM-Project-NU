@@ -13,7 +13,7 @@ async function seedAdmin() {
     await mongoose.connect(process.env.MONGO_URI);
     console.log("✅ MongoDB connected");
 
-    const email = "admin@revomart.com";
+    const email = "admin@REVOMART.com";
     const password = "Admin@123";
     const username = "superadmin";
 

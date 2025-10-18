@@ -70,7 +70,7 @@ export default function WelcomeScreen({ navigation }) {
           </View>
         </View>
 
-        <Text style={styles.title}>Welcome to{"\n"}<Text style={styles.titleAccent}>RevoMart</Text></Text>
+        <Text style={styles.title}>Welcome to{"\n"}<Text style={styles.titleAccent}>REVOMART</Text></Text>
 
         {/* Enhanced image with modern container */}
         <View style={styles.imageContainer}>

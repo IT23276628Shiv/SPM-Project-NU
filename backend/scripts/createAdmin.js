@@ -20,7 +20,7 @@ const createSuperAdmin = async () => {
     
     const superAdmin = await Admin.create({
       username: 'superadmin',
-      email: 'admin@revomart.com',
+      email: 'admin@REVOMART.com',
       passwordHash,
       role: 'super_admin',
       permissions: ['users_manage', 'products_manage', 'complaints_manage', 'feedback_view', 'analytics_view'],
@@ -28,7 +28,7 @@ const createSuperAdmin = async () => {
     });
 
     console.log('Super admin created successfully');
-    console.log('Email: admin@revomart.com');
+    console.log('Email: admin@REVOMART.com');
     console.log('Password: Admin@123');
     console.log('Please change the password after first login');
     

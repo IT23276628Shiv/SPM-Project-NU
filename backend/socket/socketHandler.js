@@ -1,4 +1,4 @@
-// backend/socket/socketHandler.js - FIXED VERSION
+// backend/socket/socketHandler.js - FINAL FIX (Replace entire file)
 import { Server } from 'socket.io';
 import admin from '../config/firebase.js';
 import Message from '../models/message.js';
@@ -6,8 +6,9 @@ import Conversation from '../models/Conversation.js';
 import Notification from '../models/Notification.js';
 import User from '../models/User.js';
 
-const connectedUsers = new Map(); // userId -> Set of socketIds (support multiple devices)
-const socketToUser = new Map(); // socketId -> userId
+const connectedUsers = new Map();
+const socketToUser = new Map();
+const conversationRooms = new Map(); // Track who's viewing which conversation
 
 export const initializeSocket = (server) => {
   const io = new Server(server, {
@@ -33,22 +34,18 @@ export const initializeSocket = (server) => {
     allowEIO3: true
   });
 
-  // ✅ FIXED: Authentication middleware
   io.use(async (socket, next) => {
     try {
       const token = socket.handshake.auth.token || socket.handshake.headers.authorization?.replace('Bearer ', '');
       
       if (!token) {
-        console.error('Socket auth failed: No token provided');
         return next(new Error('Authentication error: Missing token'));
       }
 
-      // Verify Firebase token
       const decodedToken = await admin.auth().verifyIdToken(token);
       const userDoc = await User.findOne({ firebaseUid: decodedToken.uid });
       
       if (!userDoc) {
-        console.error('Socket auth failed: User not found');
         return next(new Error('Authentication error: User not found'));
       }
 
@@ -60,10 +57,8 @@ export const initializeSocket = (server) => {
         profilePictureUrl: userDoc.profilePictureUrl
       };
       
-      console.log(`✅ Socket authenticated: ${socket.userId}`);
       next();
     } catch (error) {
-      console.error('Socket authentication error:', error.message);
       next(new Error('Authentication failed'));
     }
   });
@@ -72,24 +67,18 @@ export const initializeSocket = (server) => {
     const userId = socket.userId;
     console.log(`🔌 User connected: ${userId} (Socket: ${socket.id})`);
 
-    // ✅ Add user to connected users (support multiple devices)
     if (!connectedUsers.has(userId)) {
       connectedUsers.set(userId, new Set());
     }
     connectedUsers.get(userId).add(socket.id);
     socketToUser.set(socket.id, userId);
 
-    // Broadcast user online status
+    socket.join(`user:${userId}`);
     socket.broadcast.emit('userOnline', { userId, isOnline: true });
 
-    // ✅ Auto-join user to their personal room
-    socket.join(`user:${userId}`);
-    console.log(`👤 User ${userId} joined personal room`);
-
-    // Send pending notifications
     sendPendingNotifications(socket, userId);
 
-    // ✅ FIXED: Handle joining conversation room
+    // ✅ FIX #1: Enhanced joinConversation with room tracking
     socket.on('joinConversation', async (conversationId) => {
       try {
         if (!conversationId) {
@@ -97,7 +86,6 @@ export const initializeSocket = (server) => {
           return;
         }
 
-        // Verify user is participant
         const conversation = await Conversation.findOne({
           _id: conversationId,
           participants: userId
@@ -109,28 +97,110 @@ export const initializeSocket = (server) => {
         }
 
         socket.join(`conversation:${conversationId}`);
-        console.log(`💬 User ${userId} joined conversation ${conversationId}`);
         
+        // ✅ Track who's in this conversation room
+        if (!conversationRooms.has(conversationId)) {
+          conversationRooms.set(conversationId, new Set());
+        }
+        conversationRooms.get(conversationId).add(userId);
+        
+        console.log(`💬 User ${userId} joined conversation ${conversationId}`);
         socket.emit('conversationJoined', { conversationId });
+
+        // ✅ FIX #1: Auto-mark unread messages as read when joining
+        const unreadMessages = await Message.find({
+          receiverId: userId,
+          isRead: false,
+          $or: [
+            { senderId: { $in: conversation.participants } },
+            { receiverId: { $in: conversation.participants } }
+          ]
+        }).select('_id senderId');
+
+        if (unreadMessages.length > 0) {
+          const messageIds = unreadMessages.map(m => m._id);
+          const senderIds = [...new Set(unreadMessages.map(m => m.senderId.toString()))];
+
+          // Mark as read in DB
+          await Message.updateMany(
+            { _id: { $in: messageIds } },
+            { isRead: true, status: 'read' }
+          );
+
+          // ✅ Update conversation unread count
+          await Conversation.findByIdAndUpdate(conversationId, {
+            $set: { [`unreadCount.${userId}`]: 0 }
+          });
+
+          // ✅ Emit read status to ALL sender's devices (personal rooms)
+          senderIds.forEach(senderId => {
+            if (senderId !== userId) {
+              io.to(`user:${senderId}`).emit('messagesRead', {
+                messageIds,
+                readBy: userId,
+                conversationId
+              });
+            }
+          });
+
+          // ✅ Also emit to conversation room
+          socket.to(`conversation:${conversationId}`).emit('messagesRead', {
+            messageIds,
+            readBy: userId,
+            conversationId
+          });
+
+          console.log(`✓✓ Auto-marked ${messageIds.length} messages as read on join`);
+        }
+
+        // ✅ Notify other participant user is in chat
+        const otherParticipant = conversation.participants.find(p => p.toString() !== userId);
+        if (otherParticipant) {
+          io.to(`user:${otherParticipant}`).emit('userInConversation', {
+            conversationId,
+            userId,
+            isInChat: true
+          });
+        }
       } catch (error) {
         console.error('Error joining conversation:', error);
         socket.emit('error', { message: 'Failed to join conversation' });
       }
     });
 
-    // ✅ FIXED: Handle leaving conversation room
-    socket.on('leaveConversation', (conversationId) => {
+    socket.on('leaveConversation', async (conversationId) => {
       try {
         if (!conversationId) return;
         
         socket.leave(`conversation:${conversationId}`);
+        
+        // Remove from room tracking
+        if (conversationRooms.has(conversationId)) {
+          conversationRooms.get(conversationId).delete(userId);
+          if (conversationRooms.get(conversationId).size === 0) {
+            conversationRooms.delete(conversationId);
+          }
+        }
+        
+        // Notify other participant user left chat
+        const conversation = await Conversation.findById(conversationId);
+        if (conversation) {
+          const otherParticipant = conversation.participants.find(p => p.toString() !== userId);
+          if (otherParticipant) {
+            io.to(`user:${otherParticipant}`).emit('userInConversation', {
+              conversationId,
+              userId,
+              isInChat: false
+            });
+          }
+        }
+        
         console.log(`🚪 User ${userId} left conversation ${conversationId}`);
       } catch (error) {
         console.error('Error leaving conversation:', error);
       }
     });
 
-    // ✅ FIXED: Handle new message (broadcast to all participants)
     socket.on('sendMessage', async (data) => {
       try {
         const { conversationId, message } = data;
@@ -145,7 +215,6 @@ export const initializeSocket = (server) => {
         // Broadcast to conversation room (excluding sender)
         socket.to(`conversation:${conversationId}`).emit('newMessage', message);
         
-        // Get conversation participants
         const conversation = await Conversation.findById(conversationId)
           .populate('participants', '_id username');
         
@@ -155,35 +224,74 @@ export const initializeSocket = (server) => {
           )?._id.toString();
 
           if (receiverId) {
-            // ✅ Also emit to receiver's personal room (for notification)
-            io.to(`user:${receiverId}`).emit('newMessage', message);
+            // ✅ Check if receiver is actively viewing this chat
+            const isReceiverInRoom = conversationRooms.get(conversationId)?.has(receiverId);
             
-            // Update message status to delivered if receiver is online
-            if (connectedUsers.has(receiverId)) {
+            if (isReceiverInRoom) {
+              // ✅ Auto-mark as read immediately
               try {
                 await Message.findByIdAndUpdate(message._id, {
+                  isRead: true,
                   isDelivered: true,
-                  status: 'delivered'
+                  status: 'read'
                 });
                 
-                // Notify sender about delivery
-                socket.emit('messageDelivered', { 
-                  messageId: message._id,
-                  conversationId 
+                // Notify sender immediately
+                io.to(`user:${userId}`).emit('messagesRead', {
+                  messageIds: [message._id],
+                  readBy: receiverId,
+                  conversationId
                 });
+                
+                console.log(`✓✓ Auto-marked as read (receiver in chat)`);
               } catch (dbError) {
-                console.error('Error updating delivery status:', dbError);
+                console.error('Error auto-marking as read:', dbError);
+              }
+            } else {
+              // ✅ Mark as delivered only
+              if (connectedUsers.has(receiverId)) {
+                try {
+                  await Message.findByIdAndUpdate(message._id, {
+                    isDelivered: true,
+                    status: 'delivered'
+                  });
+                  
+                  socket.emit('messageDelivered', { 
+                    messageId: message._id,
+                    conversationId 
+                  });
+                  
+                  // ✅ FIX #2: Update unread count for receiver
+                  await Conversation.findByIdAndUpdate(conversationId, {
+                    $inc: { [`unreadCount.${receiverId}`]: 1 }
+                  });
+                  
+                  // ✅ Emit unread count update to receiver's devices
+                  const updatedConv = await Conversation.findById(conversationId);
+                  io.to(`user:${receiverId}`).emit('unreadCountUpdate', {
+                    conversationId,
+                    unreadCount: updatedConv.unreadCount.get(receiverId) || 0
+                  });
+                  
+                } catch (dbError) {
+                  console.error('Error updating delivery status:', dbError);
+                }
               }
             }
 
-            // Emit notification event
-            io.to(`user:${receiverId}`).emit('newNotification', {
-              type: 'new_message',
-              conversationId,
-              senderId: userId,
-              message: message.content || 'New message',
-              timestamp: new Date()
-            });
+            // Always emit to receiver's personal room
+            io.to(`user:${receiverId}`).emit('newMessage', message);
+            
+            // Send notification if not in chat
+            if (!isReceiverInRoom) {
+              io.to(`user:${receiverId}`).emit('newNotification', {
+                type: 'new_message',
+                conversationId,
+                senderId: userId,
+                message: message.content || 'New message',
+                timestamp: new Date()
+              });
+            }
           }
         }
       } catch (error) {
@@ -192,16 +300,15 @@ export const initializeSocket = (server) => {
       }
     });
 
-    // ✅ Handle typing indicator
     socket.on('typing', (data) => {
       try {
         const { conversationId, isTyping } = data;
         
         if (!conversationId) return;
         
-        // Broadcast to conversation room (excluding sender)
         socket.to(`conversation:${conversationId}`).emit('userTyping', { 
           userId, 
+          username: socket.userDetails.username,
           isTyping 
         });
       } catch (error) {
@@ -209,7 +316,7 @@ export const initializeSocket = (server) => {
       }
     });
 
-    // ✅ FIXED: Handle message read status
+    // ✅ FIX #1: Enhanced messageRead with sender notification
     socket.on('messageRead', async (data) => {
       try {
         const { conversationId, messageIds } = data;
@@ -219,7 +326,13 @@ export const initializeSocket = (server) => {
           return;
         }
 
-        // Update messages
+        // Get messages to find senders
+        const messages = await Message.find({
+          _id: { $in: messageIds },
+          receiverId: userId
+        }).select('senderId');
+
+        // Update messages in DB
         await Message.updateMany(
           { 
             _id: { $in: messageIds }, 
@@ -232,50 +345,143 @@ export const initializeSocket = (server) => {
           }
         );
 
-        // Broadcast read status to conversation
+        // ✅ Update conversation unread count
+        await Conversation.findByIdAndUpdate(conversationId, {
+          $set: { [`unreadCount.${userId}`]: 0 }
+        });
+
+        // ✅ Get all unique senders
+        const senderIds = [...new Set(messages.map(m => m.senderId.toString()))];
+
+        // ✅ Emit to ALL sender's devices (personal rooms + conversation room)
+        senderIds.forEach(senderId => {
+          if (senderId !== userId) {
+            // Emit to sender's personal room (all their devices)
+            io.to(`user:${senderId}`).emit('messagesRead', {
+              messageIds,
+              readBy: userId,
+              conversationId
+            });
+          }
+        });
+
+        // ✅ Also emit to conversation room
         socket.to(`conversation:${conversationId}`).emit('messagesRead', { 
           messageIds, 
           readBy: userId,
           conversationId
         });
 
-        console.log(`✓✓ ${messageIds.length} messages marked as read in ${conversationId}`);
+        console.log(`✓✓ ${messageIds.length} messages marked as read, notified ${senderIds.length} senders`);
       } catch (error) {
         console.error('Error updating read status:', error);
         socket.emit('error', { message: 'Failed to update read status' });
       }
     });
 
-    // ✅ Handle message deletion
-    socket.on('deleteMessage', async (data) => {
-      try {
-        const { messageId, conversationId } = data;
-        
-        if (!messageId || !conversationId) return;
+    // ✅ FIX #3: Enhanced deleteMessage with full broadcast
+socket.on('deleteMessage', async ({ messageId, conversationId }) => {
+  try {
+    // Auth check: User must be participant
+    const conversation = await Conversation.findOne({
+      _id: conversationId,
+      participants: userId
+    }).populate('participants', '_id');
 
-        // Verify ownership
-        const message = await Message.findById(messageId);
-        if (!message || message.senderId.toString() !== userId) {
-          socket.emit('error', { message: 'Not authorized to delete this message' });
-          return;
-        }
+    if (!conversation) {
+      socket.emit('error', { message: 'Not authorized to delete in this conversation' });
+      return;
+    }
 
-        // Delete message
-        await Message.findByIdAndDelete(messageId);
-        
-        // Broadcast deletion
-        io.to(`conversation:${conversationId}`).emit('messageDeleted', { 
-          messageId,
-          conversationId 
-        });
+    // Fetch message to check auth and if unread
+    const message = await Message.findById(messageId);
+    if (!message) {
+      console.log('Message already deleted');
+      return; // Idempotent: Already deleted, skip
+    }
 
-        console.log(`🗑️ Message ${messageId} deleted`);
-      } catch (error) {
-        console.error('Error deleting message:', error);
-      }
+    if (message.senderId.toString() !== userId) {
+      socket.emit('error', { message: 'Not authorized to delete this message' });
+      return;
+    }
+
+    const wasUnread = !message.isRead;
+    const receiverId = message.receiverId.toString();
+
+    // Delete message
+    await message.deleteOne();
+
+    // Update lastMessage: Find new latest
+    const newLastMessage = await Message.findOne({ conversationId: conversation._id })
+      .sort({ sentDate: -1 })
+      .select('_id content messageType sentDate senderId');
+
+    await Conversation.findByIdAndUpdate(conversation._id, {
+      lastMessage: newLastMessage ? {
+        _id: newLastMessage._id,
+        content: newLastMessage.content,
+        messageType: newLastMessage.messageType,
+        sentDate: newLastMessage.sentDate,
+        senderId: newLastMessage.senderId
+      } : null
     });
 
-    // ✅ Handle notification events
+    // If was unread, decrement receiver's unreadCount
+    let updatedUnreadCount = conversation.unreadCount.get(receiverId) || 0;
+    if (wasUnread) {
+      await Conversation.findByIdAndUpdate(conversation._id, {
+        $inc: { [`unreadCount.${receiverId}`]: -1 }
+      });
+      updatedUnreadCount = Math.max(0, updatedUnreadCount - 1);
+    }
+
+    // Broadcast messageDeleted
+    io.to(`conversation:${conversationId}`).emit('messageDeleted', { 
+      messageId, 
+      conversationId 
+    });
+
+    conversation.participants.forEach(participant => {
+      const participantId = participant._id.toString();
+      io.to(`user:${participantId}`).emit('messageDeleted', {
+        messageId,
+        conversationId
+      });
+    });
+
+    // Broadcast conversationUpdated (includes new lastMessage)
+    conversation.participants.forEach(participant => {
+      const participantId = participant._id.toString();
+      io.to(`user:${participantId}`).emit('conversationUpdated', {
+        conversationId,
+        update: {
+          lastMessage: newLastMessage ? {
+            _id: newLastMessage._id,
+            content: newLastMessage.content,
+            messageType: newLastMessage.messageType,
+            sentDate: newLastMessage.sentDate,
+            senderId: newLastMessage.senderId
+          } : null,
+          unreadCount: conversation.unreadCount.get(participantId) || 0  // Per-user
+        }
+      });
+    });
+
+    // Specific unreadCountUpdate for receiver if changed
+    if (wasUnread) {
+      io.to(`user:${receiverId}`).emit('unreadCountUpdate', {
+        conversationId,
+        unreadCount: updatedUnreadCount
+      });
+    }
+
+    console.log(`🗑️ Message ${messageId} deleted, conversation ${conversationId} updated`);
+
+  } catch (error) {
+    console.error('Error handling deleteMessage:', error);
+  }
+});
+
     socket.on('markNotificationRead', async (data) => {
       try {
         const { notificationId } = data;
@@ -294,7 +500,6 @@ export const initializeSocket = (server) => {
       }
     });
 
-    // ✅ Get unread count
     socket.on('getUnreadCount', async () => {
       try {
         const unreadCount = await Notification.getUnreadCount(userId);
@@ -304,7 +509,6 @@ export const initializeSocket = (server) => {
       }
     });
 
-    // ✅ Handle voice/video call requests
     socket.on('callUser', async (data) => {
       try {
         const { conversationId, callType, receiverId } = data;
@@ -314,7 +518,6 @@ export const initializeSocket = (server) => {
           return;
         }
 
-        // Check if receiver is online
         if (connectedUsers.has(receiverId)) {
           io.to(`user:${receiverId}`).emit('incomingCall', {
             callerId: userId,
@@ -333,7 +536,6 @@ export const initializeSocket = (server) => {
       }
     });
 
-    // ✅ Handle call response
     socket.on('callResponse', (data) => {
       try {
         const { conversationId, callerId, accepted } = data;
@@ -352,7 +554,6 @@ export const initializeSocket = (server) => {
       }
     });
 
-    // ✅ Handle call end
     socket.on('endCall', (data) => {
       try {
         const { conversationId, otherUserId } = data;
@@ -370,7 +571,6 @@ export const initializeSocket = (server) => {
       }
     });
 
-    // ✅ Handle conversation updates
     socket.on('conversationUpdated', (data) => {
       try {
         const { conversationId, update } = data;
@@ -385,20 +585,31 @@ export const initializeSocket = (server) => {
       }
     });
 
-    // ✅ Handle disconnect
     socket.on('disconnect', (reason) => {
       try {
         console.log(`🔌❌ User ${userId} disconnected (${reason})`);
 
-        // Remove socket from user's set
         const userSockets = connectedUsers.get(userId);
         if (userSockets) {
           userSockets.delete(socket.id);
           
-          // If no more sockets for this user, mark as offline
           if (userSockets.size === 0) {
             connectedUsers.delete(userId);
             socket.broadcast.emit('userOnline', { userId, isOnline: false });
+            
+            // Clean up conversation rooms
+            conversationRooms.forEach((users, conversationId) => {
+              if (users.has(userId)) {
+                users.delete(userId);
+                // Notify other participants user left
+                io.to(`conversation:${conversationId}`).emit('userInConversation', {
+                  conversationId,
+                  userId,
+                  isInChat: false
+                });
+              }
+            });
+            
             console.log(`👤 User ${userId} is now offline`);
           }
         }
@@ -409,7 +620,6 @@ export const initializeSocket = (server) => {
       }
     });
 
-    // Handle socket errors
     socket.on('error', (error) => {
       console.error('Socket error:', {
         socketId: socket.id,
@@ -418,22 +628,19 @@ export const initializeSocket = (server) => {
       });
     });
 
-    // Ping/pong for connection health
     socket.on('ping', () => {
       socket.emit('pong', { timestamp: Date.now() });
     });
   });
 
-  // IO-level error handling
   io.on('error', (error) => {
     console.error('Socket.IO server error:', error);
   });
 
-  console.log('✅ Socket.IO server initialized');
+  console.log('✅ Socket.IO server initialized with complete real-time sync');
   return io;
 };
 
-// ✅ Helper function to send pending notifications
 const sendPendingNotifications = async (socket, userId) => {
   try {
     const notifications = await Notification.find({
@@ -460,20 +667,17 @@ const sendPendingNotifications = async (socket, userId) => {
   }
 };
 
-// ✅ Helper function to get online users
 export const getOnlineUsers = () => {
   return Array.from(connectedUsers.keys());
 };
 
-// ✅ Helper function to check if user is online
 export const isUserOnline = (userId) => {
   return connectedUsers.has(userId);
 };
 
-// ✅ Helper function to emit to specific user (all their devices)
 export const emitToUser = (io, userId, event, data) => {
   try {
-    const emitted = io.to(`user:${userId}`).emit(event, data);
+    io.to(`user:${userId}`).emit(event, data);
     console.log(`📤 Emitted ${event} to user ${userId}`);
     return true;
   } catch (error) {
@@ -482,7 +686,6 @@ export const emitToUser = (io, userId, event, data) => {
   }
 };
 
-// ✅ Helper function to broadcast notification to user
 export const emitNotificationToUser = async (io, userId, notification) => {
   try {
     io.to(`user:${userId}`).emit('newNotification', {
@@ -506,7 +709,6 @@ export const emitNotificationToUser = async (io, userId, notification) => {
   }
 };
 
-// ✅ Helper function to get connection stats
 export const getConnectionStats = () => {
   return {
     totalUsers: connectedUsers.size,
@@ -515,6 +717,11 @@ export const getConnectionStats = () => {
     socketsPerUser: Array.from(connectedUsers.entries()).map(([userId, sockets]) => ({
       userId,
       socketCount: sockets.size
+    })),
+    activeConversations: conversationRooms.size,
+    conversationDetails: Array.from(conversationRooms.entries()).map(([convId, users]) => ({
+      conversationId: convId,
+      activeUsers: Array.from(users)
     }))
   };
 };

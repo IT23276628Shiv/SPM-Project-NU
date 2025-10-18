@@ -183,7 +183,7 @@ export default function RegisterScreen({ navigation }) {
               <Text style={styles.logoText}>RM</Text>
             </View>
             <Text style={styles.title}>Create Your Account</Text>
-            <Text style={styles.subtitle}>Join RevoMart and start your thrift journey today!</Text>
+            <Text style={styles.subtitle}>Join REVOMART and start your thrift journey today!</Text>
           </View>
 
           {/* Form Section */}

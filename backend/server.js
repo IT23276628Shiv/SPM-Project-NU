@@ -1,4 +1,4 @@
-// backend/server.js (Final Unified Version)
+// backend/server.js - Updated with WebRTC Call Support
 import express from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
@@ -17,6 +17,7 @@ import feedbackRoutes from './routes/feedback.js';
 import adminRoutes from './routes/admin.js';
 
 import { initializeSocket } from './socket/socketHandler.js';
+import { initializeCallHandlers } from './socket/callHandlers.js'; // ✅ NEW: Call handlers
 import { triggerMessageNotification, trackProductView } from './middleware/notificationTrigger.js';
 import { sendSummaryNotifications, cleanupExpiredNotifications, cleanupInvalidTokens } from './services/fcmService.js';
 
@@ -28,16 +29,18 @@ const server = createServer(app);
 // Initialize Socket.IO
 const io = initializeSocket(server);
 
+// ✅ NEW: Initialize WebRTC call handlers
+initializeCallHandlers(io);
+
 // CORS configuration (merged)
 app.use(cors({
   origin: [
     'http://localhost:5000',
     'http://localhost:8081',
     'http://172.16.20.44:5000',
-    'http://192.168.8.102:5000',
+    'http://192.168.8.101:5000',
     'http://192.168.8.100:5000',
     'http://192.168.1.230:5000',
-    'http://192.168.8.100:5000',
     'http://172.20.10.14:5000',
     'https://172.16.20.210:5000'
   ],
@@ -63,7 +66,7 @@ app.use((req, res, next) => {
 app.get('/', (_req, res) => res.json({
   ok: true,
   service: 'unified-backend',
-  features: ['auth', 'products', 'categories', 'messages', 'favorites', 'notifications'],
+  features: ['auth', 'products', 'categories', 'messages', 'favorites', 'notifications', 'webrtc-calls'], // ✅ NEW
   timestamp: new Date().toISOString()
 }));
 
@@ -76,6 +79,7 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/favorites', favoritesRoute);
 app.use('/api/feedback', feedbackRoutes);
 app.use('/api/admin', adminRoutes);
+
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({ error: 'Not Found' });
@@ -100,6 +104,7 @@ mongoose.connect(MONGO_URI, { dbName: 'mobileSystem' })
       console.log(`🚀 API server running on http://localhost:${PORT}`);
       console.log(`🔗 Socket.IO server running on http://localhost:${PORT}`);
       console.log('📱 Features enabled: Auth, Products, Categories, Messages, Favorites, Notifications');
+      console.log('📞 WebRTC Calling enabled (Voice & Video)'); // ✅ NEW
       console.log('⚡ Real-time notifications active');
     });
 

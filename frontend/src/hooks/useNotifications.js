@@ -69,8 +69,8 @@ export const useNotifications = () => {
 
       // Configure notification channel for Android
       if (Platform.OS === 'android') {
-        await Notifications.setNotificationChannelAsync('revomart_notifications', {
-          name: 'RevoMart Notifications',
+        await Notifications.setNotificationChannelAsync('REVOMART_notifications', {
+          name: 'REVOMART Notifications',
           importance: Notifications.AndroidImportance.HIGH,
           vibrationPattern: [0, 250, 250, 250],
           lightColor: '#2f95dc',
@@ -340,7 +340,7 @@ export const useNotifications = () => {
         },
         body: JSON.stringify({
           title: 'Test Notification',
-          message: 'This is a test notification from RevoMart!'
+          message: 'This is a test notification from REVOMART!'
         })
       });
 

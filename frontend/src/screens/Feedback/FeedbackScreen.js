@@ -123,7 +123,7 @@ export default function FeedbackScreen() {
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
       <View style={styles.card}>
         <Text style={styles.title}>We'd love your feedback!</Text>
-        <Text style={styles.subtitle}>Help us improve Revomart by sharing your thoughts</Text>
+        <Text style={styles.subtitle}>Help us improve REVOMART by sharing your thoughts</Text>
 
         {/* Star Rating */}
         <View style={styles.ratingContainer}>

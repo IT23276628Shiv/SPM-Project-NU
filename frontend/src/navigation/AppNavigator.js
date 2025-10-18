@@ -1,4 +1,4 @@
-// navigation/AppNavigator.js
+// navigation/AppNavigator.js - Updated with Call Screen
 import React from "react";
 import { ActivityIndicator, View, StyleSheet } from "react-native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
@@ -22,16 +22,16 @@ import CartScreen from "../screens/Home/CartScreen";
 import MyActivityScreen from "../screens/Home/MyActivityScreen";
 import SwapScreen from "../screens/Home/SwapScreen";
 
-// Chat
+// Chat & Call
 import ChatListScreen from "../screens/Chat/ChatListScreen";
 import ChatScreen from "../screens/Chat/ChatScreen";
+import CallScreen from "../screens/Call/CallScreen"; // ✅ NEW: Real call screen
 
 // Seller & Notifications (extra)
 import SellerDashboardScreen from "../screens/Seller/SellerDashboardScreen.js";
 import AllNotificationsScreen from "../screens/Notifications/AllNotificationsScreen";
 import NotificationSettingsScreen from "../screens/Notifications/NotificationSettingsScreen";
 import FeedbackScreen from "../screens/Feedback/FeedbackScreen";
-
 
 const Stack = createNativeStackNavigator();
 const Tabs = createBottomTabNavigator();
@@ -118,14 +118,25 @@ export default function AppNavigator() {
       )}
 
       {/* Profile Completion */}
-      <Stack.Screen name="InfoForm" component={InfoFormScreen} options={defaultHeader("Complete Profile")} />
+      <Stack.Screen 
+        name="InfoForm" 
+        component={InfoFormScreen} 
+        options={defaultHeader("Complete Profile")} 
+      />
 
       {/* Product Details */}
-      <Stack.Screen name="ProductDetails" component={ProductDetailsScreen} options={defaultHeader("Product Details")} />
+      <Stack.Screen 
+        name="ProductDetails" 
+        component={ProductDetailsScreen} 
+        options={defaultHeader("Product Details")} 
+      />
 
       {/* Cart */}
-      <Stack.Screen name="Cart" component={CartScreen} options={defaultHeader("My Cart")} />
-      
+      <Stack.Screen 
+        name="Cart" 
+        component={CartScreen} 
+        options={defaultHeader("My Cart")} 
+      />
 
       {/* Chat */}
       <Stack.Screen
@@ -139,9 +150,29 @@ export default function AppNavigator() {
         }}
       />
 
+      {/* ✅ NEW: Call Screen - Real voice/video calls */}
+      <Stack.Screen
+        name="Call"
+        component={CallScreen}
+        options={{
+          headerShown: false,
+          gestureEnabled: false, // Prevent accidental dismissal during calls
+          presentation: 'fullScreenModal', // Full screen for call UI
+          animation: 'slide_from_bottom',
+        }}
+      />
+
       {/* Extra screens */}
-      <Stack.Screen name="MyActivity" component={MyActivityScreen} options={defaultHeader("My Activity")} />
-      <Stack.Screen name="Swap" component={SwapScreen} options={defaultHeader("Swap Product")} />
+      <Stack.Screen 
+        name="MyActivity" 
+        component={MyActivityScreen} 
+        options={defaultHeader("My Activity")} 
+      />
+      <Stack.Screen 
+        name="Swap" 
+        component={SwapScreen} 
+        options={defaultHeader("Swap Product")} 
+      />
 
       {/* Notifications */}
       <Stack.Screen
@@ -163,7 +194,8 @@ export default function AppNavigator() {
           headerStyle: { backgroundColor: '#2F6F61' },
           headerTintColor: '#fff',
           headerTitleStyle: { fontWeight: 'bold' },
-        }}/>
+        }}
+      />
     </Stack.Navigator>
   );
 }

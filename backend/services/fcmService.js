@@ -21,7 +21,7 @@ export const sendPushNotification = async (token, payload) => {
       },
       android: {
         notification: {
-          channelId: 'revomart_notifications',
+          channelId: 'REVOMART_notifications',
           priority: 'high',
           defaultSound: true,
           defaultVibrateTimings: true,
@@ -67,7 +67,7 @@ export const sendPushNotification = async (token, payload) => {
           ]
         },
         fcm_options: {
-          link: payload.link || 'https://revomart.com/notifications'
+          link: payload.link || 'https://REVOMART.com/notifications'
         }
       }
     };
@@ -111,7 +111,7 @@ export const sendBulkPushNotifications = async (tokens, payload) => {
       },
       android: {
         notification: {
-          channelId: 'revomart_notifications',
+          channelId: 'REVOMART_notifications',
           priority: 'high',
           defaultSound: true,
           defaultVibrateTimings: true,
@@ -145,7 +145,7 @@ export const sendBulkPushNotifications = async (tokens, payload) => {
           badge: '/badge-72x72.png'
         },
         fcm_options: {
-          link: payload.link || 'https://revomart.com/notifications'
+          link: payload.link || 'https://REVOMART.com/notifications'
         }
       }
     };

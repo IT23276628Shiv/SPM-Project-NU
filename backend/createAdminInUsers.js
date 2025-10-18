@@ -12,7 +12,7 @@ async function createAdminUser() {
     await mongoose.connect(process.env.MONGO_URI);
     console.log("✅ MongoDB connected");
 
-    const email = "admin@revomart.com";
+    const email = "admin@REVOMART.com";
     const password = "Admin@123";
     const username = "superadmin";
 
@@ -63,7 +63,7 @@ async function createAdminUser() {
     }
 
     console.log("🎉 Admin user setup completed!");
-    console.log("📧 Email: admin@revomart.com");
+    console.log("📧 Email: admin@REVOMART.com");
     console.log("🔑 Password: Admin@123");
     console.log("👑 Role: admin");
     console.log("🆔 Firebase UID:", firebaseUser.uid);
