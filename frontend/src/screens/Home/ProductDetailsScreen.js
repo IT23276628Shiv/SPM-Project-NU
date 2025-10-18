@@ -1,5 +1,5 @@
 // frontend/src/screens/Home/ProductDetailsScreen.js
-import React from "react";
+import React , {useState} from "react";
 import {
   View,
   Text,
@@ -10,12 +10,14 @@ import {
   Dimensions,
   Linking,
   Alert,
-  ActivityIndicator
+  ActivityIndicator,
+  Modal,
 } from "react-native";
 import { useRoute, useNavigation } from "@react-navigation/native";
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
 import { useAuth } from "../../context/AuthContext";
 import { API_URL } from "../../constants/config";
+ import SellerProfileScreen from "./SellerProfileScreen";
 
 const { width } = Dimensions.get("window");
 
@@ -41,6 +43,8 @@ export default function ProductDetailsScreen() {
 
   const [product, setProduct] = React.useState(route.params?.product || {});
   const [loading, setLoading] = React.useState(true);
+
+  const [showProfile, setShowProfile] = useState(false);
 
   // Fetch fresh product data on mount - KEEPING ALL LOGIC SAME
   React.useEffect(() => {
@@ -339,7 +343,31 @@ export default function ProductDetailsScreen() {
                 <MaterialCommunityIcons name="account-outline" size={18} color={theme.primary} />
                 <View style={styles.detailContent}>
                   <Text style={styles.detailLabel}>Owner</Text>
-                  <Text style={styles.detailValue}>{product.ownerName || "N/A"}</Text>
+                  {/* <Text style={styles.detailValue}>{product.ownerName || "N/A"}</Text> */}
+
+                  {/* Seller Profile  */}
+                  <TouchableOpacity
+  onPress={() => {
+    if (product.ownerId.firebaseUid === user.uid) {
+      Alert.alert("Access Denied", "You can't review your own product.");
+    } else {
+      setShowProfile(true);
+    }
+  }}
+>
+  <Text style={[styles.detailValue, { color: "blue" }]}>
+    {product.ownerName || "N/A"}
+  </Text>
+</TouchableOpacity>
+
+{/* Popup Modal */}
+<Modal visible={showProfile} transparent animationType="slide">
+  <SellerProfileScreen
+    ownerId={product.ownerId.firebaseUid}
+    onClose={() => setShowProfile(false)}
+  />
+</Modal>
+
                 </View>
               </View>
 
