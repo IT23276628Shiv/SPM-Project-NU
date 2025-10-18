@@ -328,26 +328,6 @@ export default function RegisterScreen({ navigation }) {
               </View>
             </TouchableOpacity>
 
-            {/* Divider */}
-            <View style={styles.dividerContainer}>
-              <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>or continue with</Text>
-              <View style={styles.dividerLine} />
-            </View>
-
-            {/* Google Button */}
-            <TouchableOpacity 
-              style={styles.googleButton} 
-              onPress={handleGoogleRegister}
-              activeOpacity={0.8}
-            >
-              <Image 
-                source={require('../../../assets/google.png')}
-                style={styles.googleIcon}
-              />
-              <Text style={styles.googleText}>Sign up with Google</Text>
-            </TouchableOpacity>
-
             {/* Login Link */}
             <View style={styles.loginContainer}>
               <Text style={styles.loginText}>Already have an account? </Text>

@@ -202,4 +202,17 @@ router.put("/:uid", async (req, res) => {
   }
 });
 
+router.get("/sellers/:firebaseUid",async (req, res) => {
+  
+    const { firebaseUid } = req.params;
+    console.log("I am in Auth.js :: " , firebaseUid )
+    try {
+    const seller = await User.findOne({ firebaseUid: req.params.firebaseUid });
+    if (!seller) return res.status(404).json({ message: "Seller not found" });
+    res.json(seller);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+   });
+
 export default router;

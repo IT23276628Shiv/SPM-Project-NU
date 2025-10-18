@@ -1,92 +1,66 @@
 import { Router } from 'express';
-import jwt from 'jsonwebtoken';
-import Review from '../models/review.js';
+import User from '../models/User.js';
+import Review from '../models/Review.js';
 
 const router = Router();
 
-// Middleware to verify JWT token
-const authMiddleware = (req, res, next) => {
-  const token = req.headers.authorization?.split(' ')[1];
-  if (!token) return res.status(401).json({ error: 'No token provided' });
+// GET all reviews of a seller
+router.get('/seller/:sellerId', async (req, res) => {
+  const { sellerId } = req.params;
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.userId = decoded.sub;
-    next();
-  } catch (e) {
-    res.status(401).json({ error: 'Invalid token' });
+    // Find seller by Firebase UID
+    const seller = await User.findOne({ firebaseUid: sellerId });
+    if (!seller) return res.status(404).json({ message: 'Seller not found' });
+
+    // Fetch reviews
+    const reviews = await Review.find({ seller: seller._id }).sort({ createdAt: -1 });
+    res.json({ reviews, ratingAverage: seller.ratingAverage });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
   }
-};
+});
 
-// Create a review (protected)
-router.post('/', authMiddleware, async (req, res) => {
+// POST a review for a seller
+router.post('/seller/:sellerId', async (req, res) => {
+  const { sellerId } = req.params;
+  const { reviewerId, rating, comment } = req.body;
+
+  if (!sellerId || !reviewerId) {
+    return res.status(400).json({ message: 'Seller ID and reviewer ID are required' });
+  }
+  if (!rating || rating < 1 || rating > 5) {
+    return res.status(400).json({ message: 'Rating must be between 1 and 5' });
+  }
+
   try {
-    const { reviewedUserId, transactionId, rating, comment } = req.body;
-    if (!reviewedUserId || !transactionId || !rating) return res.status(400).json({ error: 'Missing required fields' });
+    const seller = await User.findOne({ firebaseUid: sellerId });
+    const reviewer = await User.findOne({ firebaseUid: reviewerId });
 
-    const review = await Review.create({
-      reviewerId: req.userId,
-      reviewedUserId,
-      transactionId,
+    if (!seller) return res.status(404).json({ message: 'Seller not found' });
+    if (!reviewer) return res.status(404).json({ message: 'Reviewer not found' });
+
+    const review = new Review({
+      seller: seller._id,
+      reviewer: reviewer._id,
+      reviewerName: reviewer.username,
       rating,
       comment,
     });
-    res.status(201).json({ review });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
 
-// Get all reviews for a user (public)
-router.get('/user/:userId', async (req, res) => {
-  try {
-    const reviews = await Review.find({ reviewedUserId: req.params.userId })
-      .populate('reviewerId', 'username')
-      .populate('transactionId', 'productId');
-    res.json({ reviews });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
+    await review.save();
 
-// Get a single review
-router.get('/:id', async (req, res) => {
-  try {
-    const review = await Review.findById(req.params.id)
-      .populate('reviewerId', 'username')
-      .populate('reviewedUserId', 'username')
-      .populate('transactionId', 'productId');
-    if (!review) return res.status(404).json({ error: 'Review not found' });
-    res.json({ review });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
+    // Update seller average rating
+    const allReviews = await Review.find({ seller: seller._id });
+    const totalRating = allReviews.reduce((sum, r) => sum + r.rating, 0);
+    seller.ratingAverage = Number((totalRating / allReviews.length).toFixed(1));
+    await seller.save();
 
-// Update a review (protected, reviewer only)
-router.put('/:id', authMiddleware, async (req, res) => {
-  try {
-    const { rating, comment } = req.body;
-    const review = await Review.findOneAndUpdate(
-      { _id: req.params.id, reviewerId: req.userId },
-      { rating, comment },
-      { new: true, runValidators: true }
-    );
-    if (!review) return res.status(404).json({ error: 'Review not found or unauthorized' });
-    res.json({ review });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// Delete a review (protected, reviewer only)
-router.delete('/:id', authMiddleware, async (req, res) => {
-  try {
-    const review = await Review.findOneAndDelete({ _id: req.params.id, reviewerId: req.userId });
-    if (!review) return res.status(404).json({ error: 'Review not found or unauthorized' });
-    res.json({ message: 'Review deleted' });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(201).json({ review, ratingAverage: seller.ratingAverage });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
   }
 });
 
