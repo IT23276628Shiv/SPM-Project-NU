@@ -1,5 +1,5 @@
 // frontend/src/components/ProductOwnerBuyerRequest.jsx
-import React from "react";
+import React, { useState } from "react";
 import { View, Text, TouchableOpacity, Image, StyleSheet } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import axios from "axios";
@@ -24,6 +24,49 @@ const theme = {
   textMuted: "#94A3B8",
   border: "#E2E8F0",
   borderLight: "#F1F5F9",
+};
+
+// See More Component
+const SeeMoreButton = ({ expanded, onPress, count }) => (
+  <TouchableOpacity style={styles.seeMoreButton} onPress={onPress}>
+    <Text style={styles.seeMoreText}>
+      {expanded ? "Show Less" : `See More (${count})`}
+    </Text>
+    <Ionicons 
+      name={expanded ? "chevron-up" : "chevron-down"} 
+      size={16} 
+      color={theme.primary} 
+    />
+  </TouchableOpacity>
+);
+
+// Expandable List Component for Buy Requests
+const ExpandableBuyRequestsList = ({ items, renderItem, itemsPerPage = 5 }) => {
+  const [expanded, setExpanded] = useState(false);
+  
+  const displayedItems = expanded 
+    ? items 
+    : items.slice(0, 1); // Show only 1 item initially
+
+  const remainingCount = items.length - 1;
+
+  if (items.length === 0) {
+    return null;
+  }
+
+  return (
+    <View>
+      {displayedItems.map(renderItem)}
+      
+      {items.length > 1 && (
+        <SeeMoreButton 
+          expanded={expanded}
+          onPress={() => setExpanded(!expanded)}
+          count={remainingCount}
+        />
+      )}
+    </View>
+  );
 };
 
 export default function ProductOwnerBuyerRequest({ requests, user, onRefresh }) {
@@ -227,6 +270,7 @@ export default function ProductOwnerBuyerRequest({ requests, user, onRefresh }) 
         <View style={styles.sectionHeader}>
           <Ionicons name="arrow-up-circle" size={20} color={theme.primary} />
           <Text style={styles.sectionTitle}>Buy Requests You Sent</Text>
+          <Text style={styles.sectionCount}>({sentRequests.length})</Text>
         </View>
         {sentRequests.length === 0 ? (
           <View style={styles.emptyState}>
@@ -237,7 +281,10 @@ export default function ProductOwnerBuyerRequest({ requests, user, onRefresh }) 
             </Text>
           </View>
         ) : (
-          sentRequests.map(req => renderRequestCard(req, "sent"))
+          <ExpandableBuyRequestsList 
+            items={sentRequests}
+            renderItem={(req) => renderRequestCard(req, "sent")}
+          />
         )}
       </View>
 
@@ -246,6 +293,7 @@ export default function ProductOwnerBuyerRequest({ requests, user, onRefresh }) 
         <View style={styles.sectionHeader}>
           <Ionicons name="arrow-down-circle" size={20} color={theme.accent} />
           <Text style={styles.sectionTitle}>Buy Requests Received</Text>
+          <Text style={styles.sectionCount}>({receivedRequests.length})</Text>
         </View>
         {receivedRequests.length === 0 ? (
           <View style={styles.emptyState}>
@@ -256,7 +304,10 @@ export default function ProductOwnerBuyerRequest({ requests, user, onRefresh }) 
             </Text>
           </View>
         ) : (
-          receivedRequests.map(req => renderRequestCard(req, "received"))
+          <ExpandableBuyRequestsList 
+            items={receivedRequests}
+            renderItem={(req) => renderRequestCard(req, "received")}
+          />
         )}
       </View>
     </View>
@@ -279,6 +330,12 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "600",
     color: theme.textPrimary,
+    marginLeft: 8,
+  },
+  sectionCount: {
+    fontSize: 16,
+    fontWeight: "500",
+    color: theme.textMuted,
     marginLeft: 8,
   },
   emptyState: {
@@ -452,7 +509,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     fontSize: 14,
   },
-
   buyProductSection: {
     backgroundColor: theme.background,
     borderRadius: 12,
@@ -495,5 +551,20 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: theme.textSecondary,
   },
-
+  seeMoreButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    backgroundColor: theme.primaryLight,
+    borderRadius: 12,
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  seeMoreText: {
+    color: theme.primary,
+    fontWeight: "600",
+    fontSize: 14,
+    marginRight: 8,
+  },
 });
